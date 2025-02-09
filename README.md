@@ -285,17 +285,17 @@ But also, any asynchronous methods that utilize a callback or promise can be aut
 
 ```
 Q.Data = Q.Method.define({
-	all: function (a, b) {
-		return a && b;
-	},
-	digest: new Q.Method(),
-	compress: new Q.Method(),
-	decompress: new Q.Method(),
-	sign: new Q.Method(),
-	verify: new Q.Method(),
+  all: function (a, b) {
+    return a && b;
+  },
+  digest: new Q.Method(),
+  compress: new Q.Method(),
+  decompress: new Q.Method(),
+  sign: new Q.Method(),
+  verify: new Q.Method(),
 }, "Q/Data", function() {
   // pass variables in a closure
-	return [Q, something];
+  return [Q, something];
 }));
 ```
 
@@ -417,10 +417,10 @@ In it, you will define the tools, methods, and other things. Here is an example:
   // defaults are in english, but you can override with Q.Text.get below
   // by convention, modules usually store all user-facing text in Q.text:
   Q.text.Streams = {
-	  onboarding: {
-		  prompt: "Fill our your basic information to complete your signup.",
-		  title: "Basic Information"
-	  }
+    onboarding: {
+      prompt: "Fill our your basic information to complete your signup.",
+      title: "Basic Information"
+    }
   };
 
   // set default text file for tools and templates
@@ -433,9 +433,9 @@ In it, you will define the tools, methods, and other things. Here is an example:
   Q.Tool.define({
     // specify js and css
     "Streams/chat": {
-		  js: "{{Streams}}/js/tools/chat.js",
-		  css: "{{Streams}}/css/tools/chat.css"
-	  },
+      js: "{{Streams}}/js/tools/chat.js",
+      css: "{{Streams}}/css/tools/chat.css"
+    },
     // or define tools as html file (Vue-style)
     "Streams/comments": {
       html: "Streams/html/tools/comments.html"
@@ -445,8 +445,8 @@ In it, you will define the tools, methods, and other things. Here is an example:
   });
 
   Q.onInit.add(function _Streams_onInit() {
-	  Q.Text.get('Streams/content').then(text => {
-		  Q.extend(Q.text.Streams, 10, text);
+    Q.Text.get('Streams/content').then(text => {
+      Q.extend(Q.text.Streams, 10, text);
     });
   });
 })(Q, jQuery);
