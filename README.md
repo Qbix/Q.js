@@ -40,7 +40,7 @@ Here is an overview of the main ones:
 
 You can dynamically create elements in a React-like way, such as this:
 
-```
+```javascript
 Q.element('div', {id: "foo", "class": "bar baz"}, [
    Q.element('img', {src: "foo.png"}),
    Q.element('img', {src: "bar.png"})
@@ -48,12 +48,12 @@ Q.element('div', {id: "foo", "class": "bar baz"}, [
 ```
 
 Instead, you can define [Handlebars templates](https://github.com/handlebars-lang/handlebars.js) like this:
-```
+```javascript
 Q.Template.set("Namespace/some/name", `put your template here`);
 ```
 
 And then render them later like this:
-```
+```javascript
 Q.Template.render("Namespace/some/name").then(html => Q.replace(element, html));
 ```
 
@@ -116,7 +116,7 @@ Q.Template.set("Namespace/another/view",
 Optionally, you can also define tools in HTML files, Vue-style, which may result in nicer
 syntax highlighting for both the HTML templates and the Javascript:
 
-```
+```html
 <template id="Namespace/another/view">
    <span class="Namespace_another_x">{{x}}</span>
 </template>
@@ -170,7 +170,7 @@ Whenever you call `Q.activate(document.body)` it will traverse the whole documen
 `Q.activate()` on containers where you've recently replaced HTML, rather than the whole document body.
 
 You can remove tools manually before removing elements:
-```
+```javascript
 Q.Tool.clear(container); // child elements only
 Q.Tool.remove(element); // also on element itself
 ```
@@ -184,7 +184,7 @@ However, incoming tools with a `data-q-replace` attributes replace even tools th
 
 Q.js even overrides `$.fn.html()` and `$.fn.activate()` in libraries like jQuery and $cash so that you can call the following
 to automatically cause old tools to be removed and new tools to be activated inside the element:
-```
+```javascript
 $(element).html(html).activate();
 ```
 
@@ -274,7 +274,7 @@ More information: https://qbix.com/platform/guide/eventsClient
 
 There are multiple ways to autoload external tools on demand.
 
-```
+```javascript
 // Analogues of node.js modules
 Q.exports(function () { ... }); // in a file
 Q.require(src, callback); // loading the file
@@ -283,7 +283,7 @@ Q.import(src).then(...); // wrapper around native import
 
 But also, any asynchronous methods that utilize a callback or promise can be autoloaded:
 
-```
+```javascript
 Q.Data = Q.Method.define({
   all: function (a, b) {
     // regular method
@@ -301,7 +301,7 @@ Q.Data = Q.Method.define({
 
 and then you can define the methods in files like `Q/Data/digest.js`:
 
-```
+```javascript
 Q.exports(function (Q, something) { // receive closures from main file
     return function Q_Data_digest(algorithm, payload, callback) {
         // here you have access to both the parameters and the closures!!
@@ -315,7 +315,7 @@ Q.exports(function (Q, something) { // receive closures from main file
 
 You should consider using this extensively, to organize your front-end code and load only as needed:
 
-```
+```javascript
 Q.Data.sign(algorithm, payload) // autoload method's code on demand
 .then(...) // continue after promise resolves
 ```
