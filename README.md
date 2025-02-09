@@ -210,9 +210,9 @@ Here is how you add code to run when a page loads and before it unloads:
 
 ```javascript:
 Q.page('Namespace/action', function () {
-
+  // runs when page is loaded
   return function () {
-    // runs when page is unloaded
+    // runs before page is unloaded
   };
 });
 ```
