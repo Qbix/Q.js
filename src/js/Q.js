@@ -7,7 +7,7 @@
 "use strict";
 
 /* jshint -W014 */
-(function _Q_setup(undefined, dontSetGlobals) {
+export default (function _Q_setup(undefined, dontSetGlobals) {
 
 var root = this;
 
@@ -14872,4 +14872,4 @@ setTimeout(function () {
 
 return Q;
 
-}).call(this);
+}).call(window);
