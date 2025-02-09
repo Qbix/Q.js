@@ -12,7 +12,7 @@ How to use: copy `dist/js` into your project, and then include it like this:
 
 This is part of the much larger full-stack [Qbix Platform](https://github.com/Qbix/Platform) that contains many pre-built reusable tools, plugins, and requires PHP and Node.js on the back-end. If you want to build an entire full-stack social network like Facebook you're well-advised to go with that. But if you just want to use the lightweight front-end core, with your own back-end and other frameworks, then start with this framework here.
 
-# Features
+# 🔍 Features
 
 Despite its size, Q.js implements many features not found in other front-end frameworks.
 Here is an overview of the main ones:
@@ -36,7 +36,7 @@ Here is an overview of the main ones:
 
 # Overview
 
-### Templates
+### 📝 Templates
 
 You can dynamically create elements in a React-like way, such as this:
 
@@ -59,7 +59,7 @@ Q.Template.render("Namespace/some/name").then(html => Q.replace(element, html));
 
 Rendering templates that haven't been set yet causes requests to autoload from inside `Q.Template.load.options.dir`
 
-### Tools
+### 🛠️ Tools
 
 Tools represent re-usable components in Q.js -- just like in other front-end libraries, except Tools are only one part of a unified framework!
 
@@ -192,7 +192,7 @@ When tools are removed, all associated event handlers are removede automaiticall
 
 More information: https://qbix.com/platform/guide/tools
 
-### Pages
+### 📄 Pages
 
 While Tools are reusable components, the concept of Pages is tied to HTTP resources and URLs in browsers.
 
@@ -223,7 +223,7 @@ Q.page('Namespace/action', function () {
 
 More information: https://qbix.com/platform/guide/pages
 
-### Events
+### ⏰ Events
 
 Add `onFoo: new Q.Event()` as properties on any object. By convention, the properties are called `onFoo`, and optionally `beforeFoo` (before the event occurs).
 
@@ -270,7 +270,7 @@ Q.Tool.onActivate(toolType) // retrieves or creates new Q.Event
 
 More information: https://qbix.com/platform/guide/eventsClient
 
-### Methods
+### ⚙️ Methods
 
 There are multiple ways to autoload external tools on demand.
 
@@ -320,7 +320,7 @@ Q.Data.sign(algorithm, payload) // autoload method's code on demand
 .then(...) // continue after promise resolves
 ```
 
-### Objects
+### 📂 Objects
 
 Use `Q.copy(object, fields, levels)` to copy an object. Sub-objects may expose custom `.copy()` methods to be used.
 
@@ -377,7 +377,7 @@ Other tool instances won't have these handlers added. They'll have **a copy of**
 
 Also notice what `Q.extend()` does with arrays. The `foo` above would become `['a', 'b', 'c', 'd']` while the `bar` would become `['c', 'd']`, because the array was being replaced by an object with a key "replace", so it replaces the array with the given value (another array).
 
-### Functions
+### ➕ Functions
 
 By convention, methods that take options have default options defined in the `options` property on the method itself.
 When called, a copy of the default options extended with any options passed to the method. Example:
@@ -397,9 +397,9 @@ A.method.options = {
 You've already seen this in action above with tools, but you're highly encouraged to use this pattern with any functions
 or methods that take an object of options. It's a unified way to override default values, including events.
 
-# Putting It All Together
+# 🚀 Putting It All Together
 
-### Main Module
+### 📦 Main Module
 
 When you write an app or a plugin, you'll probably want to have Javascript file that acts as your main module.
 In it, you will define the tools, methods, and other things. Here is an example:
