@@ -276,9 +276,9 @@ There are multiple ways to autoload external tools on demand.
 
 ```
 // Analogues of node.js modules
-Q.exports(src, callback);
-Q.require(src, callback);
-Q.import()
+Q.exports(function () { ... }); // in a file
+Q.require(src, callback); // loading the file
+Q.import(src).then(...); // wrapper around native import
 ```
 
 But also, any asynchronous methods that utilize a callback or promise can be autoloaded:
