@@ -353,7 +353,7 @@ in `tool.state`, ready to use. So suppose you instantiated the tool as follows:
 const element = Q.Tool.prepare('div', 'Foo/bar', {
    // override some options when making element
    foo: ['c', 'd'],
-   bar: {replace: ['c', 'd']}
+   bar: {replace: ['c', 'd']},
    onFoo: {
      "Foo/bar": function () {
        // override default handler, but only for this instance
