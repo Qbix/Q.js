@@ -245,7 +245,7 @@ However, Q.js has a great way to automate the removal of events. Simply pass the
 | `$cash.on(event, tool, handler)`  | automatically calls `.off()` when tool is removed |
 | `$cash.on(event, true, handler)`  | automatically removed when current page is unloaded |
 
-Calling `set()` or `add()` again with the same String key replaces previous handlers set with that same key. But the `key` is not a `String` (i.e. it's a `Q.Tool` or `true`) then the handlers are added to the existing ones, and `remove(handler, key)` removes only that handler. 
+Calling `set()` or `add()` again with the same String key replaces previous handlers set with that same key. But if the `key` is not a `String` (i.e. it's a `Q.Tool` or `true`) then the handlers are added to the existing ones, and `remove(handler, key)` removes only that handler. 
 
 You can define your own event factory very easily using the `Q.Event.factory()` function. The Event Factory pattern is used in order to create events on demand. For example, here we call an event factory to produce an event and add a handler to be run whenever a tool is activated
 ```javascript
