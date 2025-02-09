@@ -286,7 +286,7 @@ But also, any asynchronous methods that utilize a callback or promise can be aut
 ```
 Q.Data = Q.Method.define({
   all: function (a, b) {
-    return a && b;
+    // regular method
   },
   digest: new Q.Method(),
   compress: new Q.Method(),
@@ -302,10 +302,10 @@ Q.Data = Q.Method.define({
 and then you can define the methods in files like `Q/Data/digest.js`:
 
 ```
-Q.exports(function (Q, something) { // import the closures
+Q.exports(function (Q, something) { // receive closures from main file
     return function Q_Data_digest(algorithm, payload, callback) {
-        // here you have access to the parameters and closures
-        doStuff.then(function (result) {
+        // here you have access to both the parameters and the closures!!
+        return doStuff.then(function (result) {
             callback && callback(null, result); // callback interface
             return result; // promise interface
         });
