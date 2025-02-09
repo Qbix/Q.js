@@ -2423,7 +2423,7 @@ Evp.addOnce = function _Q_Event_prototype_addOnce(handler, key, prepend) {
  * @method remove
  * @param {String} key
  *  The key of the handler to remove.
- *  Pass a Q.Tool object here to remove the handler, if any, associated with this tool.
+ *  Pass a Q.Tool object here to remove the handlers, if any, associated with this tool.
  */
 Evp.remove = function _Q_Event_prototype_remove(key) {
 	// Only available in the front-end Q.js: {
@@ -2464,9 +2464,6 @@ Evp.remove = function _Q_Event_prototype_remove(key) {
 /**
  * Removes all handlers for this event
  * @method removeAllHandlers
- * @param {String} key
- *  The key of the handler to remove.
- *  Pass a Q.Tool object here to remove the handler, if any, associated with this tool.
  */
 Evp.removeAllHandlers = function _Q_Event_prototype_removeAllHandlers() {
 	this.handlers = {};
@@ -10940,7 +10937,7 @@ Q.Data = Q.Method.define({
 		}
 		return new Blob([u8arr], {type:mime});
 	}
-}, "{{Q}}/js/methods/Q/Data", function() {
+}, "methods/Q/Data", function() {
 	return [Q];
 });
 
@@ -13680,42 +13677,11 @@ Q.Audio.loadVoices = new Q.Method();
 Q.Audio.play = new Q.Method();
 Q.Audio.speak = new Q.Method();
 
-Q.Method.define(Q.Audio, "{{Q}}/js/methods/Q/Audio", function() {
+Q.Method.define(Q.Audio, "methods/Q/Audio", function() {
 	return [Q, root];
 });
 
-/**
- * @method recorderInit
- * Set recorder class
- * @param {object} [options] Object with options
- * @param {function} [options.onStreamReady] callback onStreamReady - fire when user apply access to microphones
- * @param {function} [options.onDataAvailable] callback onDataAvailable - fire when audio stream encoded and redy o use
- */
-Aup.recorderInit = function (options) {
-	var tool = this;
 
-	// load recorder
-	Q.addScript("{{Q}}/js/audioRecorder/recorder.js", function(){
-		tool.recorder = tool.recorder || new Recorder({leaveStreamOpen: true, encoderPath: Q.url("{{Q}}/js/audioRecorder/encoderWorker.js")}); // ogg format encoder
-		//tool.recorder = tool.recorder || new Recorder({leaveStreamOpen: true, encoderPath: Q.url("{{Q}}/js/audioRecorder/recorderWorkerMP3.js")}); // mp3 format encoder
-
-		tool.recorder.addEventListener("streamReady", function(e){
-			if (typeof options.onStreamReady === "function") options.onStreamReady.call();
-		});
-
-		// when error occur with audio stream
-		tool.recorder.addEventListener("streamError", function(e){
-			log('Error encountered: ' + e.error.name );
-		});
-
-		tool.recorder.addEventListener("dataAvailable", function(e){
-			if (typeof options.onDataAvailable === "function") options.onDataAvailable.call(e);
-		});
-
-		tool.recorder.initStream();
-	});
-
-};
 /**
  * @method pause
  * Pauses the audio if it is playing
@@ -14100,11 +14066,13 @@ Q.Text.addFor(
 	'Q/', ["Q/content"]
 );
 Q.Tool.define({
+/*
 	"Q/inplace": "{{Q}}/js/tools/inplace.js",
 	"Q/tabs": {
 		js: "{{Q}}/js/tools/tabs.js",
 		css: "{{Q}}/css/tools/tabs.css"
 	}
+*/
 });
 
 function _addHandlebarsHelpers() {
