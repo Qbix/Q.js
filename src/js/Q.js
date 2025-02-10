@@ -2267,7 +2267,6 @@ Q.Event.define = function (target, type) {
  * removed, then Q.removeEventListener() is called on the target DOM element.
  * @static
  * @method from
- * @param {String|Q.Tool} key
  * @param {Object} target
  * @param {String} eventName
  * @return {Q.Event}
