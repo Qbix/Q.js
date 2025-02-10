@@ -255,8 +255,8 @@ However, Q.js has a great way to automate the removal of events. Simply pass the
 
 | Call Type | Description |
 |------------|-------------|
-| `event.set(handler, String)`  | need to manually call `event.remove(key)` |
-| `event.set(handler, Q.Tool)`  | automatically removed when tool is removed |
+| `event.set(handler, string)`  | need to manually call `event.remove(key)` |
+| `event.set(handler, tool)`  | automatically removed when tool is removed |
 | `event.set(handler, true)`  | automatically removed when current page is unloaded |
 | `$cash.on(event, tool, handler)`  | automatically calls `.off()` when tool is removed |
 | `$cash.on(event, true, handler)`  | automatically removed when current page is unloaded |
