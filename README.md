@@ -34,6 +34,22 @@ Here is an overview of the main ones:
 | Flow | `Q.chain()`, `Q.getter()`, `Q.batcher()`, `Q.promisify()`, `Q.debounce()` |
 | Helpers | `Q.find()`, `Q.activate()`, `Q.cookie()`, `Q.handle()` |
 
+# ⚖️ Comparison with React, Vue, Angular, Svelte, ...
+
+| Feature 🏆              | **Q.js** ⚡ | **React / Vue / Angular (Virtual DOM Frameworks)** 🏗️ | **Svelte (Compile-Time Reactivity)** 🔥 |
+|------------------------|------------|------------------------------------------------------|------------------------------------|
+| **Rendering Approach** 🎨 | **Direct DOM Updates (No Diffing, No Virtual DOM)** | **Virtual DOM Diffing (Compares Old vs. New State Before Applying Changes)** | **Precompiled Updates (No Virtual DOM, but Re-renders at Runtime)** |
+| **Performance** ⚡ | **Ultra-Fast (Only Updates What’s Needed, No Extra Work)** | **Good, but has Overhead from Diffing & Reconciliation** | **Fast, but Still Triggers Rerendering of Dependencies** |
+| **Memory Usage** 🧠 | **Low (No Virtual DOM, Minimal Garbage Collection)** | **Higher (Virtual DOM Objects, Garbage Collection Overhead)** | **Lower than React, but Still Some Overhead** |
+| **State Management** 📦 | **Q.Streams (Lightweight, Event-Based, No Reconciliation Needed)** | **React State, Vuex, Redux, Angular Services (Complex, May Recompute Unnecessarily)** | **Reactive Variables (Auto-tracked, But Recomputes Dependencies)** |
+| **SSR & Hydration** 🌍 | **Pre-renders HTML + Activates Tools Dynamically** | **Hydrates Virtual DOM (Slower than Direct Activation)** | **Precompiles, But Still Needs Hydration for Full Interactivity** |
+| **Component Model** 🏗️ | **Q.Templates (Reusable, No Reconciliation Overhead)** | **JSX / Templates (Component Tree, Reactivity Overhead)** | **Compiles to Optimized JS, but Still Re-renders Dependencies** |
+| **Interactivity & Events** 🎭 | **Direct Event Binding (No Proxy Wrappers or Hook Dependencies)** | **Event Handlers in JSX/Templates (Needs Reactivity System Management)** | **Reactive Bindings (Efficient, but Not Direct DOM Updates)** |
+| **Batch Updates** 🚀 | **Efficient (requestAnimationFrame for Large-Scale Updates)** | **Uses `setState` / `useEffect` (Batching Depends on Framework Optimization)** | **Recomputes Dependencies (No Explicit Batching Mechanism)** |
+| **Learning Curve** 📚 | **Simple (Declarative, Minimal Magic, No Hooks Complexity)** | **Medium-High (Hooks, Context API, JSX Complexity in Large Apps)** | **Lower than React, But Still Requires Understanding Reactivity** |
+| **SEO & Progressive Enhancement** 🔍 | **Works with Static HTML (Enhances Dynamically, No JS Required for Initial Render)** | **Requires JavaScript to Render (Hydration Needed for Full Functionality)** | **Compiles to Optimized JS, But Still Requires JavaScript for Interactivity** |
+| **Best For** ✅ | **High-Performance, Directly Interactive Apps, Real-Time Dashboards, Low-Latency UI** | **Full-Scale Web Apps, Component-Based Architectures** | **Small-to-Medium Apps that Benefit from Compilation-Based Reactivity** |
+
 # Overview
 
 ## 📝 Templates
