@@ -3,10 +3,10 @@ All-In-One Front-End Web Framework from Qbix, alternative to jQuery, Angular, Vu
 
 Size: 55KB (Minified + GZipped), [compare to other frameworks](https://gist.github.com/Restuta/cda69e50a853aa64912d)
 
-How to use: copy `dist/js` into your project, and then include it like this:
+How to use: copy contents of `dist` into your project, and then include it like this:
 | File Type | Code to Use |
 |------------|-------------|
-|`.html` files| `<script type="module" src="js/Q.js">`|
+|`.html` files| `<script type="module" src="Q.js">`|
 |`.js` or `.ts` files|`import Q from './Q.js';`
 |<img src="https://github.com/user-attachments/assets/ba3df93e-0cd8-4189-93fc-11947b63b684" alt="Description" width="100" height="87"> | Full documentation here: https://qbix.com/platform/guide/javascript |
 
