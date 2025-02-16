@@ -3066,28 +3066,7 @@ Q.ensure = function _Q_ensure(property, callback) {
  */
 Q.ensure.loaders = {
 	'Handlebars': Q.currentScriptPath('handlebars-v4.0.10.min.js'),
-	'Q.info.baseUrl': Q.onInit,
-	'IntersectionObserver': function (property, callback) {
-		if ('IntersectionObserver' in window
-		&& 'IntersectionObserverEntry' in window
-		&& 'intersectionRatio' in window.IntersectionObserverEntry.prototype) {
-			// Minimal polyfill for Edge 15's lack of `isIntersecting`
-			// See: https://github.com/w3c/IntersectionObserver/issues/211
-			if (!('isIntersecting' in window.IntersectionObserverEntry.prototype)) {
-   				  Object.defineProperty(window.IntersectionObserverEntry.prototype,
-   					  'isIntersecting', {
-   						  get: function () {
-   							  return this.intersectionRatio > 0;
-   						  }
-   					  }
-   				  );
-			}
-			return callback && callback(property);
-	 	}
-		Q.addScript('{{Q}}/js/polyfills/IntersectionObserver.js', function () {
-			callback && callback(property);
-		});
-	}
+	'Q.info.baseUrl': Q.onInit
 };
 
 /**
@@ -7787,7 +7766,7 @@ Q.interpolateUrl = function (url, additional) {
 	}
 	var substitutions = {};
 	substitutions['baseUrl'] = substitutions[Q.info.app] = Q.baseUrl();
-	substitutions['Q'] = Q.pluginBaseUrl('Q');
+	substitutions['Q'] = Q.currentScriptPath();
 	for (var plugin in Q.plugins) {
 		substitutions[plugin] = Q.pluginBaseUrl(plugin);
 	}
