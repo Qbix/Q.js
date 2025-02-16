@@ -6,7 +6,7 @@ Size: 55KB (Minified + GZipped), [compare to other frameworks](https://gist.gith
 How to use: copy contents of `dist` into your project, and then include it like this:
 | File Type | Code to Use |
 |------------|-------------|
-|`.html` files| `<script type="module" src="Q.js">`|
+|`.html` files| `<script type="module">import { Q } from './Q.js</script>`|
 |`.js` or `.ts` files|`import Q from './Q.js';`
 |<img src="https://github.com/user-attachments/assets/ba3df93e-0cd8-4189-93fc-11947b63b684" alt="Description" width="100" height="87"> | Full documentation here: https://qbix.com/platform/guide/javascript |
 
