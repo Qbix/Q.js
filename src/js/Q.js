@@ -1704,7 +1704,7 @@ Q.promisify = function (getter, useThis, callbackIndex) {
 					return resolve(value);
 				});
 			} else if (callbackIndex instanceof Array
-			&& callbackIndex[0] == i) {
+			&& callbackIndex[1] == i) {
 				found = true;
 				args.push(function _onReject(value) {
 					if (ai instanceof Function) {
