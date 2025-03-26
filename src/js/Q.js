@@ -4360,6 +4360,47 @@ var _qtp = Q.Tool.placeholders = {};
 var Tp = Q.Tool.prototype;
 
 /**
+ * Use this to render a template into a tool's element,
+ * using its prefix for any tools inside the template.
+ * This function also extends the tool.elements object
+ * with elements defined in the template and found with
+ * tool.element.querySelector() inside the element.
+ * It also activates the content inside the tool, if any.
+ * @method renderTemplate
+ * @param {String|Object} name See Q.Template.render and Q.Template.load
+ * @param {Object} [fields] The fields to pass to the template when rendering it.
+ * @param {Function} [callback] a callback - receives (error) or (error, html)
+ * @param {Object} [options={}] Options for the template engine compiler. See Q.Template.render.
+ *  Also used as options for Q.activate()
+ * @return {Promise} can use this instead of callback
+ */
+Tp.renderTemplate = Q.promisify(function (name, fields, callback, options) {
+	var tool = this;
+	return Q.Template.render(name, fields || {}, function (err, html) {
+		if (err) {
+			return callback && callback(err);
+		}
+		Q.replace(tool.element, html);
+		var n = Q.normalize.memoized(name);
+		var info = Q.Template.info[n];
+		if (!tool.elements) {
+			tool.elements = {};
+		}
+		for (var k in info.elements || {}) {
+			tool.elements[k] = tool.element.querySelector(info.elements[k]);
+		}
+		if (options && options.beforeActivate) {
+			callback && callback.call(tool, null, html, tool.elements, tools, options);
+		}
+		Q.activate(tool.element.children, options, function (elem, tools, options) {
+			callback && callback.call(this, null, html, tool.elements, tools, options);
+		});
+	}, Q.extend({
+		tool: tool
+	}, options));
+}, false, 2);
+
+/**
  * Call this after changing one more values in the state.
  * Unlike Angular and Ember, Q provides a more explicit mechanism
  * for signaling that a tool's state has changed.
