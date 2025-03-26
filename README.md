@@ -96,12 +96,17 @@ Q.Tool.define("Namespace/another", function (options) {
   refresh: function () {
     this.state; // copy of options
     this.element; // the element it was activated on
-    Template.render(this.state).then(html => {
-      Q.replace(this.element, html); // removes old tools
-      Q.activate(this.element); // activate any new child tools
-      // save references to elements, for quick access:
-      this.x = this.querySelector('.Namespace_another_x');
-      this.y = this.querySelector('.Namespace_another_y');
+    this.renderTemplate('Namespace/another/view', this.state, {
+        some: options,
+        'Namespace_cool_name_tool': {
+            some: childToolOptions
+        }
+    }).then(function (html, elements, tools) {
+        // now this.x and this.y point to elements from
+        // the template that was rendered, while
+        this.element.forEachTool('Namespace/cool/name', function () {
+            // run whenever a child tool activates
+        });
     });
     // this is how we handle in-place updates if x or y changes:
     this.rendering([x, y], (changed, previous, timestamp) => {
@@ -125,7 +130,13 @@ Q.Tool.define("Namespace/another", function (options) {
 Q.Template.set("Namespace/another/view",
    `<span class="Namespace_another_x">{{x}}</span>
     <span class="Namespace_another_y">{{y}}</span>
-    {{{tool "Namespace/cool/name" "some-child-id" x=x y=3 z="foo"}}}`
+    {{{tool "Namespace/cool/name" "some-child-id" x=x y=3 z="foo"}}}`,
+   {
+      "elements": {
+         "x": ".Namespace_another_x",
+         "y": ".Namespace_another_y"
+      }
+   }
 );
 ```
 
