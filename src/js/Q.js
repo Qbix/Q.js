@@ -1732,13 +1732,12 @@ Q.promisify = function (getter, useThis, callbackIndex) {
 		});
 		if (callbackIndex instanceof Array) {
 			if (callbackIndex[0] && args.length <= callbackIndex[0]) {
-				args.push(resolve);
+				args[callbackIndex[0]] = resolve;
 			}
 			if (callbackIndex[1] && args.length <= callbackIndex[1]) {
-				args.push(reject);
+				args[callbackIndex[1]] = reject;
 			}
-		}
-		if (!found) {
+		} else if (!found) {
 			var ci = (callbackIndex === undefined) ? args.length : callbackIndex;
 			args.splice(ci, 0, function _defaultCallback(err, second) {
 				if (err) {
