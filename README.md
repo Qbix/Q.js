@@ -110,8 +110,8 @@ Q.Tool.define("Namespace/another", function (options) {
     });
     // this is how we handle in-place updates if x or y changes:
     this.rendering([x, y], (changed, previous, timestamp) => {
-      Q.replace(this.x, x); // very quick
-      Q.replace(this.y, y); // very quick
+      Q.replace(this.elements.x, x); // very quick
+      Q.replace(this.elements.y, y); // very quick
       this.element.addClass('updated_flash'); // some CSS effect
     });
     // to trigger these, anyone can simply call tool.stateChanged('x')
