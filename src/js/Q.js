@@ -9081,14 +9081,18 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 		onload();
 	}
 
-	var o = Q.extend({}, Q.addScript.options, options);
-
 	if (typeof media === 'function') {
 		options = onload; onload = media; media = undefined;
 	} else if (Q.isPlainObject(media) && !(media instanceof Q.Event)) {
 		options = media; media = null;
 	}
-	options = options || {};
+	var o = Q.extend({}, Q.addScript.options, options);
+	if (!o.slotName && Q.Tool.beingActivated) {
+		var n = Q.Tool.names[Q.Tool.beingActivated.name];
+		if (n) {
+			o.slotName = n.split('/')[0];
+		}
+	}
 	if (!onload) {
 		onload = function () { };
 	}
@@ -9109,13 +9113,13 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 		});
 		return ret;
 	}
-	var container = options.container || document.getElementsByTagName('head')[0];
+	var container = o.container || document.getElementsByTagName('head')[0];
 
 	if (!href) {
 		onload(false);
 		return false;
 	}
-	options.info = {};
+	o.info = {};
 	href = Q.url(href, null, options);
 	var href2 = href.split('?')[0];
 	
@@ -9164,7 +9168,7 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 		|| Q.addStylesheet.loaded[href2]
 		|| !Q.addStylesheet.added[href2]) {
 			onload();
-			return options.returnAll ? e : false;
+			return o.returnAll ? e : false;
 		}
 		if (!Q.addStylesheet.onLoadCallbacks[href2]) {
 			Q.addStylesheet.onLoadCallbacks[href2] = [];
@@ -9188,7 +9192,7 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 			}
 			e.wasProcessedByQ = true;
 		}
-		return options.returnAll ? e : false; // don't add
+		return o.returnAll ? e : false; // don't add
 	}
 
 	// Create the stylesheet's tag and insert it into the document
@@ -9196,9 +9200,9 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 	link.setAttribute('rel', 'stylesheet');
 	link.setAttribute('type', 'text/css');
 	link.setAttribute('media', media);
-	if (options.info.h && !options.skipIntegrity) {
+	if (o.info.h && !o.skipIntegrity) {
 		if (Q.info.urls && Q.info.urls.integrity) {
-			link.setAttribute('integrity', 'sha256-' + options.info.h);
+			link.setAttribute('integrity', 'sha256-' + o.info.h);
 		}
 	}
 	Q.addStylesheet.added[href] = true;
@@ -9208,9 +9212,9 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 	link.setAttribute('href', href);
 	var elements = document.querySelectorAll('link[data-slot], style[data-slot]');
 	var insertBefore = null;
-	if (Q.allSlotNames && options.slotName) {
-		link.setAttribute('data-slot', options.slotName);
-		var slotIndex = Q.allSlotNames.indexOf(options.slotName);
+	if (Q.allSlotNames && o.slotName) {
+		link.setAttribute('data-slot', o.slotName);
+		var slotIndex = Q.allSlotNames.indexOf(o.slotName);
 		for (var j=0; j<elements.length; ++j) {
 			e = elements[j];
 			var slotName = e.getAttribute('data-slot');
@@ -9263,7 +9267,7 @@ Q.ServiceWorker = {
 			navigator.serviceWorker.register(src)
 			.then(function (registration) {
 				log("Q.ServiceWorker.register", registration);
-				if (options.update) {
+				if (o.update) {
 					registration.update();
 				}
 				registration.removeEventListener("updatefound", _onUpdateFound);
