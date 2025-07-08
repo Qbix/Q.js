@@ -6358,56 +6358,86 @@ Q.IndexedDB = {};
  *   You can also pass a string here, if you're just specifying the keyPath.
  * @param {String} params.keyPath The key path inside the object store.
  * @param {Array} params.indexes Array of arrays for createIndex consisting of [indexName, keyPath, options]
- * @param {Function} callback Receives (error, ObjectStore)
+ * @param {Function} callback Receives (error, IDBObjectStore, IDBDatabase)
  * @return {Q.Promise}
  */
 Q.IndexedDB.open = Q.promisify(function (dbName, storeName, params, callback) {
 	if (!root.indexedDB) {
 		return false;
 	}
+
 	var keyPath = (typeof params === 'string' ? params : params.keyPath);
-	var open = indexedDB.open(dbName);
+	var indexes = (typeof params === 'object' && Array.isArray(params.indexes)) ? params.indexes : [];
+
+	var lockKey = dbName + ':' + storeName;
+	var openLocks = Q.IndexedDB.open.locks = Q.IndexedDB.open.locks || {};
+	if (openLocks[lockKey]) {
+		// Wait for previous open to finish
+		return openLocks[lockKey].then(function (result) {
+			if (callback) callback.call(Q.IndexedDB, null, result.store, result.db);
+		});
+	}
+
+	var resolveLock, rejectLock;
+	var lockPromise = new Promise(function (resolve, reject) {
+		resolveLock = resolve;
+		rejectLock = reject;
+	});
+	openLocks[lockKey] = lockPromise;
+
 	var _triedAddingObjectStore = false;
-	open.onupgradeneeded = function() {
-		var db = this.result;
-		if (!db.objectStoreNames.contains(storeName)
-		&& !_triedAddingObjectStore) {
-			_triedAddingObjectStore = true;
-			var store = db.createObjectStore(storeName, {keyPath: keyPath});
-			var idxs = params.indexes;
-			if (idxs) {
-				for (var i=0, l=idxs.length; i<l; ++i) {
-					store.createIndex(idxs[i][0], idxs[i][1], idxs[i][2]);
+
+	function _doOpen(version) {
+		var req = version ? indexedDB.open(dbName, version) : indexedDB.open(dbName);
+
+		req.onupgradeneeded = function () {
+			var db = req.result;
+			if (!db.objectStoreNames.contains(storeName) && !_triedAddingObjectStore) {
+				_triedAddingObjectStore = true;
+				var store = db.createObjectStore(storeName, { keyPath: keyPath });
+				for (var i = 0; i < indexes.length; ++i) {
+					var idx = indexes[i];
+					store.createIndex(idx[0], idx[1], idx[2]);
 				}
 			}
-		}
-	};
-	open.onerror = function (error) {
-		callback && callback.call(Q.IndexedDB, error);
-	};
-	open.onsuccess = function() {
-		var db = this.result;
-		var version = db.version;
-		db.onversionchange = function () {
-			db.close();
 		};
-		if (!db.objectStoreNames.contains(storeName)) {
-			// need to upgrade version and add this store
-			++version;
-			db.close();
-			var o = indexedDB.open(dbName, version);
-			Q.take(open, ['onupgradeneeded', 'onerror', 'onsuccess'], o);
-			return;
-		}
-		// Start a new transaction
-		var tx = db.transaction(storeName, "readwrite");
-		var store = tx.objectStore(storeName);
-		callback && callback.call(Q.IndexedDB, null, store);
-		// Close the db when the transaction is done
-		tx.oncomplete = function() {
-			db.close();
+
+		req.onerror = function (e) {
+			delete openLocks[lockKey];
+			if (callback) callback.call(Q.IndexedDB, e);
+			rejectLock(e);
 		};
-	};
+
+		req.onsuccess = function () {
+			var db = req.result;
+			var version = db.version;
+
+			db.onversionchange = function () {
+				db.close();
+			};
+
+			if (!db.objectStoreNames.contains(storeName)) {
+				// Need to upgrade version and retry
+				db.close();
+				_doOpen(version + 1);
+				return;
+			}
+
+			var tx = db.transaction(storeName, "readwrite");
+			var store = tx.objectStore(storeName);
+
+			tx.oncomplete = function () {
+				db.close();
+			};
+
+			var result = { store: store, db: db };
+			if (callback) callback.call(Q.IndexedDB, null, store, db);
+			resolveLock(result);
+			delete openLocks[lockKey];
+		};
+	}
+
+	_doOpen(undefined);
 });
 Q.IndexedDB.put = Q.promisify(function (store, value, callback) {
 	_DB_addEvents(store, store.put(value), callback);
