@@ -6348,52 +6348,25 @@ Q.Cache.session.caches = {};
  */
 Q.IndexedDB = {};
 
-/**
- * Creates or uses an existing database and object store name.
- * @static
- * @method open
- * @param {String} dbName The name of the database
- * @param {String} storeName The name of the object store name inside the database
- * @param {String|Object} params Parameters for creating the key store.
- *   You can also pass a string here, if you're just specifying the keyPath.
- * @param {String} params.keyPath The key path inside the object store.
- * @param {Array} params.indexes Array of arrays for createIndex consisting of [indexName, keyPath, options]
- * @param {Function} callback Receives (error, IDBObjectStore, IDBDatabase)
- * @return {Q.Promise}
- */
-Q.IndexedDB.open = Q.promisify(function (dbName, storeName, params, callback) {
+Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 	if (!root.indexedDB) {
-		return false;
+		var err = new Error("IndexedDB not supported");
+		if (callback) callback(err);
+		return false; // prevents caching
 	}
 
-	var keyPath = (typeof params === 'string' ? params : params.keyPath);
+	var keyPath = typeof params === 'string' ? params : params.keyPath;
 	var indexes = (typeof params === 'object' && Array.isArray(params.indexes)) ? params.indexes : [];
 
-	var lockKey = dbName + ':' + storeName;
-	var openLocks = Q.IndexedDB.open.locks = Q.IndexedDB.open.locks || {};
-	if (openLocks[lockKey]) {
-		// Wait for previous open to finish
-		return openLocks[lockKey].then(function (result) {
-			if (callback) callback.call(Q.IndexedDB, null, result.store, result.db);
-		});
-	}
+	var triedCreatingStore = false;
 
-	var resolveLock, rejectLock;
-	var lockPromise = new Promise(function (resolve, reject) {
-		resolveLock = resolve;
-		rejectLock = reject;
-	});
-	openLocks[lockKey] = lockPromise;
-
-	var _triedAddingObjectStore = false;
-
-	function _doOpen(version) {
+	function tryOpen(version) {
 		var req = version ? indexedDB.open(dbName, version) : indexedDB.open(dbName);
 
 		req.onupgradeneeded = function () {
 			var db = req.result;
-			if (!db.objectStoreNames.contains(storeName) && !_triedAddingObjectStore) {
-				_triedAddingObjectStore = true;
+			if (!db.objectStoreNames.contains(storeName) && !triedCreatingStore) {
+				triedCreatingStore = true;
 				var store = db.createObjectStore(storeName, { keyPath: keyPath });
 				for (var i = 0; i < indexes.length; ++i) {
 					var idx = indexes[i];
@@ -6403,41 +6376,32 @@ Q.IndexedDB.open = Q.promisify(function (dbName, storeName, params, callback) {
 		};
 
 		req.onerror = function (e) {
-			delete openLocks[lockKey];
-			if (callback) callback.call(Q.IndexedDB, e);
-			rejectLock(e);
+			callback(e);
 		};
 
 		req.onsuccess = function () {
 			var db = req.result;
-			var version = db.version;
-
-			db.onversionchange = function () {
-				db.close();
-			};
-
-			if (!db.objectStoreNames.contains(storeName)) {
-				// Need to upgrade version and retry
-				db.close();
-				_doOpen(version + 1);
-				return;
+			if (!db._versionchangeAttached) {
+				db._versionchangeAttached = true;
+				db.onversionchange = function () {
+					db.close();
+				};
 			}
 
-			var tx = db.transaction(storeName, "readwrite");
-			var store = tx.objectStore(storeName);
-
-			tx.oncomplete = function () {
+			if (!db.objectStoreNames.contains(storeName)) {
 				db.close();
-			};
-
-			var result = { store: store, db: db };
-			if (callback) callback.call(Q.IndexedDB, null, store, db);
-			resolveLock(result);
-			delete openLocks[lockKey];
+				tryOpen((db.version || 1) + 1);
+			} else {
+				callback(null, db);
+			}
 		};
 	}
 
-	_doOpen(undefined);
+	tryOpen();
+}, {
+	cache: Q.Cache.document("Q.IndexedDB.db", 10),
+	nonStandardErrorConvention: false,
+	resolveWithSecondArgument: true // resolves promise with `db`
 });
 Q.IndexedDB.put = Q.promisify(function (store, value, callback) {
 	_DB_addEvents(store, store.put(value), callback);
