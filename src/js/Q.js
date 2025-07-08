@@ -6348,6 +6348,25 @@ Q.Cache.session.caches = {};
  */
 Q.IndexedDB = {};
 
+/**
+ * Opens an IndexedDB database and ensures the object store exists.
+ * Uses Q.getter internally to cache and reuse database connections per dbName.
+ * 
+ * Automatically upgrades the schema if the object store or indexes are missing.
+ * Detects and recovers from stale or closed connections, such as when resuming from background.
+ * 
+ * If the callback is provided, it will be called with (err, objectStore, db).
+ * If no callback is provided, returns a Promise that resolves to the IDBDatabase.
+ * 
+ * @method open
+ * @param {String} dbName The name of the IndexedDB database
+ * @param {String} storeName The name of the object store to ensure exists
+ * @param {String|Object} params Either a string keyPath, or an object: { keyPath, indexes }
+ * @param {String} [params.keyPath] The keyPath to use when creating the object store
+ * @param {Array} [params.indexes] Optional array of [indexName, keyPath, options] entries
+ * @param {Function} [callback] Optional Node-style callback with (err, objectStore, db)
+ * @return {Promise<IDBDatabase>} Resolves with the open IDBDatabase if no callback is passed
+ */
 Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 	if (!root.indexedDB) {
 		var err = new Error("IndexedDB not supported");
@@ -6392,16 +6411,35 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 				db.close();
 				tryOpen((db.version || 1) + 1);
 			} else {
+				// Patch: if db was reopened due to being closed, set it into the cache again
+				var key = Q.Cache.key(arguments);
+				var getterFn = Q.IndexedDB.open;
+				if (getterFn.cache && getterFn.cache.set) {
+					getterFn.cache.set(key, 3, this, arguments); // 3 = callback position
+				}
 				callback(null, db);
 			}
 		};
 	}
 
+	// Check if we already have a cached handle and it's invalid
+	var getterFn = Q.IndexedDB.open;
+	var key = Q.Cache.key(arguments);
+	var cached = getterFn.cache && getterFn.cache.get && getterFn.cache.get(key);
+	if (cached && cached.result && cached.result.readyState === 'done') {
+		try {
+			// Attempt a dummy transaction to detect failure
+			cached.result.transaction(storeName, 'readonly');
+		} catch (e) {
+			// Force a new connection
+			return getterFn.force(dbName, storeName, params, callback);
+		}
+	}
+
 	tryOpen();
 }, {
-	cache: Q.Cache.document("Q.IndexedDB.db", 10),
-	nonStandardErrorConvention: false,
-	resolveWithSecondArgument: true // resolves promise with `db`
+	cache: Q.Cache.document("Q.IndexedDB.open", 10),
+	resolveWithSecondArgument: true
 });
 Q.IndexedDB.put = Q.promisify(function (store, value, callback) {
 	_DB_addEvents(store, store.put(value), callback);
