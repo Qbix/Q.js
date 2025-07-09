@@ -6409,12 +6409,6 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 				db.close();
 				tryOpen((db.version || 1) + 1);
 			} else {
-				// Patch: if db was reopened due to being closed, set it into the cache again
-				var key = Q.Cache.key(arguments);
-				var open = Q.IndexedDB.open;
-				if (open.cache && open.cache.set) {
-					open.cache.set(key, 0, this, arguments);
-				}
 				callback(null, db);
 			}
 		};
@@ -6424,26 +6418,23 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 	resolveWithSecondArgument: true,
 	prepare: function (s, p, callback, args) {
 		var gw = this;
-		var db = p[1], dbName = args[0], storeName = args[1], isOpen = false;
+		var db = p[1], dbName = args[0], storeName = args[1];
 		try {
-			isOpen = db && db.objectStoreNames.contains(storeName);
-		} catch (e) {}
-		if (isOpen) {
-			callback(s, p);
-			return;
-		}
-
-		// Connection is closing or closed — refresh manually without infinite loop
-		Q.IndexedDB.open(dbName, storeName, p, function (err, newDb) {
-			var key = Q.Cache.key(args);
-			if (!err && gw.cache) {
-				var cached = gw.cache.get(key);
-				if (cached) {
-					gw.cache.set(key, cached.cbpos, s, arguments);
+			const tx = db.transaction(storeName, 'readonly');
+			callback(s, p); // everything is fine
+		} catch (e) {
+			// Connection is closing or closed — refresh manually without infinite loop
+			this.original(dbName, storeName, p, function (err, newDb) {
+				var key = Q.Cache.key(args);
+				if (!err && gw.cache) {
+					var cached = gw.cache.get(key);
+					if (cached) {
+						gw.cache.set(key, cached.cbpos, s, arguments);
+					}
 				}
-			}
-			return callback(gw, arguments);
-		});
+				return callback(this, arguments);
+			});
+		}
 	}
 });
 Q.IndexedDB.put = Q.promisify(function (store, value, callback) {
