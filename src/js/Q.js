@@ -6373,12 +6373,10 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 		if (callback) callback(err);
 		return false; // prevents caching
 	}
-
 	var keyPath = typeof params === 'string' ? params : params.keyPath;
 	var indexes = (typeof params === 'object' && Array.isArray(params.indexes)) ? params.indexes : [];
-
 	var triedCreatingStore = false;
-
+	tryOpen();
 	function tryOpen(version) {
 		var req = version ? indexedDB.open(dbName, version) : indexedDB.open(dbName);
 
@@ -6413,33 +6411,40 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 			} else {
 				// Patch: if db was reopened due to being closed, set it into the cache again
 				var key = Q.Cache.key(arguments);
-				var getterFn = Q.IndexedDB.open;
-				if (getterFn.cache && getterFn.cache.set) {
-					getterFn.cache.set(key, 3, this, arguments); // 3 = callback position
+				var open = Q.IndexedDB.open;
+				if (open.cache && open.cache.set) {
+					open.cache.set(key, 3, this, arguments);
 				}
 				callback(null, db);
 			}
 		};
 	}
-
-	// Check if we already have a cached handle and it's invalid
-	var getterFn = Q.IndexedDB.open;
-	var key = Q.Cache.key(arguments);
-	var cached = getterFn.cache && getterFn.cache.get && getterFn.cache.get(key);
-	if (cached && cached.result && cached.result.readyState === 'done') {
-		try {
-			// Attempt a dummy transaction to detect failure
-			cached.result.transaction(storeName, 'readonly');
-		} catch (e) {
-			// Force a new connection
-			return getterFn.force(dbName, storeName, params, callback);
-		}
-	}
-
-	tryOpen();
 }, {
 	cache: Q.Cache.document("Q.IndexedDB.open", 10),
-	resolveWithSecondArgument: true
+	resolveWithSecondArgument: true,
+	prepare: function (s, p, callback, args) {
+		var gw = this;
+		var db = p[1], dbName = args[0], storeName = args[1], isOpen = false;
+		try {
+			isOpen = db && db.objectStoreNames.contains(storeName);
+		} catch (e) {}
+		if (isOpen) {
+			callback(s, p);
+			return;
+		}
+
+		// Connection is closing or closed — refresh manually without infinite loop
+		Q.IndexedDB.open(dbName, storeName, p, function (err, newDb) {
+			var key = Q.Cache.key(args);
+			if (!err && gw.cache) {
+				var cached = gw.cache.get(key);
+				if (cached) {
+					gw.cache.set(key, cached.cbpos, s, arguments);
+				}
+			}
+			return callback(gw, arguments);
+		});
+	}
 });
 Q.IndexedDB.put = Q.promisify(function (store, value, callback) {
 	_DB_addEvents(store, store.put(value), callback);
