@@ -6424,7 +6424,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 			callback(s, p); // everything is fine
 		} catch (e) {
 			// Connection is closing or closed — refresh manually without infinite loop
-			this.original(dbName, storeName, p, function (err, newDb) {
+			this.original(dbName, storeName, params, function (err, newDb) {
 				var key = Q.Cache.key(args);
 				if (!err && gw.cache) {
 					var cached = gw.cache.get(key);
