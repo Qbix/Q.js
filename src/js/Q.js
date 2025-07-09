@@ -6413,7 +6413,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 				var key = Q.Cache.key(arguments);
 				var open = Q.IndexedDB.open;
 				if (open.cache && open.cache.set) {
-					open.cache.set(key, 3, this, arguments);
+					open.cache.set(key, 0, this, arguments);
 				}
 				callback(null, db);
 			}
