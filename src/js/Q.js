@@ -6418,7 +6418,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 	resolveWithSecondArgument: true,
 	prepare: function (s, p, callback, args) {
 		var gw = this;
-		var db = p[1], dbName = args[0], storeName = args[1];
+		var db = p[1], dbName = args[0], storeName = args[1], params = args[2];
 		try {
 			const tx = db.transaction(storeName, 'readonly');
 			callback(s, p); // everything is fine
