@@ -4030,15 +4030,6 @@ Q.Tool = function _Q_Tool(element, options) {
 		 */
 		onStateChanged: new Q.Event.factory({}, "")
 	}, this.Q);
-
-	var tool = this;
-	setTimeout(function () {
-		// clean up temporary options to allow garbage collection
-		delete tool.options;
-		if (element.options) {
-			delete element.options[normalizedName];
-		}
-	});
 	
 	return this;
 };
