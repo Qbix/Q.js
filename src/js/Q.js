@@ -6392,7 +6392,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 
 		req.onupgradeneeded = function () {
 			var db = req.result;
-			if (!db.objectStoreNames.includes(storeName) && !triedCreatingStore) {
+			if (!db.objectStoreNames.contains(storeName) && !triedCreatingStore) {
 				triedCreatingStore = true;
 				var store = db.createObjectStore(storeName, { keyPath: keyPath });
 				for (var i = 0; i < indexes.length; ++i) {
@@ -6415,7 +6415,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 				};
 			}
 
-			if (!db.objectStoreNames.includes(storeName)) {
+			if (!db.objectStoreNames.contains(storeName)) {
 				db.close();
 				tryOpen((db.version || 1) + 1);
 			} else {
