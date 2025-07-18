@@ -6415,7 +6415,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 				};
 			}
 
-			if (!db.objectStoreNames.contains(storeName)) {
+			if (!db.objectStoreNames.includes(storeName)) {
 				db.close();
 				tryOpen((db.version || 1) + 1);
 			} else {
