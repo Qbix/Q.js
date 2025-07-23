@@ -6415,7 +6415,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 			var hasUpgraded = dbs.some(db => (db.version || 0) > 1);
 			if (!hasUpgraded && !Q.IndexedDB.onEmptyDatabases.occurred) {
 				if (false === Q.handle(Q.IndexedDB.onEmptyDatabases, Q.IndexedDB)) {
-					callback?.(new Error("Q.IndexedDB.open: aborted due to empty databases"));
+					callback && callback(new Error("Q.IndexedDB.open: aborted due to empty databases"));
 					return;
 				}
 			}
@@ -6438,7 +6438,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 		};
 
 		req.onerror = function (e) {
-			callback?.(e.target.error || new Error("IndexedDB open error"));
+			callback && callback(e.target.error || new Error("IndexedDB open error"));
 		};
 
 		req.onsuccess = function () {
@@ -6453,7 +6453,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 
 			if (!db.objectStoreNames.contains(storeName)) {
 				if (triedCreatingStore) {
-					callback?.(new Error("Store creation failed after upgrade"));
+					callback && callback(new Error("Store creation failed after upgrade"), db);
 					return;
 				}
 				db.close();
@@ -6462,7 +6462,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 				return;
 			}
 
-			callback?.(null, db);
+			callback && callback(null, db);
 		};
 	}
 }, {
