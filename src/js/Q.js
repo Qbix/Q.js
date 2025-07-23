@@ -6354,7 +6354,19 @@ Q.Cache.session.caches = {};
  * @constructor
  * @param {String} uriString
  */
-Q.IndexedDB = {};
+Q.IndexedDB = {
+	/**
+	* Store and customize your text strings under Q.text
+	* @property {Object} Store Q.IndexedDB.params[dbName][storeName] = params for IndexedDB.open()
+	*/
+	params: {},
+	/**
+	* Store and customize your text strings under Q.text
+	* @property {Q.Event} This event is fired during Q.IndexedDB.open() when
+	*   all databases are discovered to have version <= 1
+	*/
+	onEmptyDatabases: new Q.Event()
+};
 
 /**
  * Opens an IndexedDB database and ensures the object store exists.
@@ -6377,37 +6389,62 @@ Q.IndexedDB = {};
  */
 Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 	if (!root.indexedDB) {
-		var err = new Error("IndexedDB not supported");
+		const err = new Error("IndexedDB not supported");
 		if (callback) callback(err);
-		return false; // prevents caching
+		return false; // prevents Q.getter from caching failure
 	}
 
-	var keyPath = typeof params === 'string' ? params : params.keyPath;
-	var indexes = (typeof params === 'object' && Array.isArray(params.indexes)) ? params.indexes : [];
+	if (typeof params === 'string') {
+		params = { keyPath: params };
+	}
+	if (typeof params === 'function') {
+		callback = params;
+		params = {};
+	}
 
-	var triedCreatingStore = false;
+	params = Q.extend({}, Q.getObject([dbName, storeName], Q.IndexedDB.params), params);
+	const indexes = Array.isArray(params.indexes) ? params.indexes : [];
+	let triedCreatingStore = false;
 
-	function tryOpen(version) {
-		var req = version ? indexedDB.open(dbName, version) : indexedDB.open(dbName);
+	tryOpen();
+
+	async function tryOpen(version) {
+		// Check for empty (only version=1) databases
+		try {
+			const dbs = await indexedDB.databases();
+			const hasUpgraded = dbs.some(db => (db.version || 0) > 1);
+			if (!hasUpgraded && !Q.IndexedDB.onEmptyDatabases.occurred) {
+				Q.IndexedDB.onEmptyDatabases.occurred = true;
+				if (false === Q.handle(Q.IndexedDB.onEmptyDatabases, Q.IndexedDB)) {
+					callback?.(new Error("Q.IndexedDB.open: aborted due to empty databases"));
+					return;
+				}
+			}
+		} catch (e) {
+			// ignore indexedDB.databases errors on older browsers
+		}
+
+		const req = version ? indexedDB.open(dbName, version) : indexedDB.open(dbName);
 
 		req.onupgradeneeded = function () {
-			var db = req.result;
+			const db = req.result;
 			if (!db.objectStoreNames.contains(storeName) && !triedCreatingStore) {
 				triedCreatingStore = true;
-				var store = db.createObjectStore(storeName, { keyPath: keyPath });
-				for (var i = 0; i < indexes.length; ++i) {
-					var idx = indexes[i];
-					store.createIndex(idx[0], idx[1], idx[2]);
+				const store = db.createObjectStore(storeName, { keyPath: params.keyPath });
+				for (let i = 0; i < indexes.length; ++i) {
+					const [name, keyPath, opts] = indexes[i];
+					store.createIndex(name, keyPath, opts);
 				}
 			}
 		};
 
 		req.onerror = function (e) {
-			callback(e);
+			callback?.(e.target.error || new Error("IndexedDB open error"));
 		};
 
 		req.onsuccess = function () {
-			var db = req.result;
+			const db = req.result;
+
 			if (!db._versionchangeAttached) {
 				db._versionchangeAttached = true;
 				db.onversionchange = function () {
@@ -6416,38 +6453,43 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 			}
 
 			if (!db.objectStoreNames.contains(storeName)) {
+				if (triedCreatingStore) {
+					callback?.(new Error("Store creation failed after upgrade"));
+					return;
+				}
 				db.close();
 				tryOpen((db.version || 1) + 1);
-			} else {
-				// Patch: if db was reopened due to being closed, set it into the cache again
-				var key = Q.Cache.key(arguments);
-				var getterFn = Q.IndexedDB.open;
-				if (getterFn.cache && getterFn.cache.set) {
-					getterFn.cache.set(key, 3, this, arguments); // 3 = callback position
-				}
-				callback(null, db);
+				return;
 			}
+
+			callback?.(null, db);
 		};
 	}
-
-	// Check if we already have a cached handle and it's invalid
-	var getterFn = Q.IndexedDB.open;
-	var key = Q.Cache.key(arguments);
-	var cached = getterFn.cache.get(key);
-	if (cached && cached.params[1]) {
-		try {
-			// Attempt a dummy transaction to detect failure
-			cached.params[1].transaction(storeName, 'readonly');
-		} catch (e) {
-			// Force a new connection
-			return getterFn.force(dbName, storeName, params, callback);
-		}
-	}
-
-	tryOpen();
 }, {
 	cache: Q.Cache.document("Q.IndexedDB.open", 10),
-	resolveWithSecondArgument: true
+	resolveWithSecondArgument: true,
+	prepare: function (s, p, callback, args) {
+		const getter = this;
+		const [dbName, storeName, params] = args;
+		const db = p[1];
+
+		try {
+			db.transaction(storeName, 'readonly'); // triggers exception if closed
+			callback(s, p); // valid cache
+		} catch (e) {
+			// Connection is closing or closed — refresh manually without infinite loop
+			getter.original(dbName, storeName, params, function (err, newDb) {
+				const key = Q.Cache.key(args);
+				if (!err && getter.cache) {
+					const cached = getter.cache.get(key);
+					if (cached) {
+						getter.cache.set(key, cached.cbpos, s, arguments);
+					}
+				}
+				callback.apply(getter, arguments);
+			});
+		}
+	}
 });
 Q.IndexedDB.put = Q.promisify(function (store, value, callback) {
 	_DB_addEvents(store, store.put(value), callback);
