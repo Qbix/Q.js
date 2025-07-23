@@ -6403,18 +6403,17 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 	}
 
 	params = Q.extend({}, Q.getObject([dbName, storeName], Q.IndexedDB.params), params);
-	const indexes = Array.isArray(params.indexes) ? params.indexes : [];
-	let triedCreatingStore = false;
+	var indexes = Array.isArray(params.indexes) ? params.indexes : [];
+	var triedCreatingStore = false;
 
 	tryOpen();
 
 	async function tryOpen(version) {
 		// Check for empty (only version=1) databases
 		try {
-			const dbs = await indexedDB.databases();
-			const hasUpgraded = dbs.some(db => (db.version || 0) > 1);
+			var dbs = await indexedDB.databases();
+			var hasUpgraded = dbs.some(db => (db.version || 0) > 1);
 			if (!hasUpgraded && !Q.IndexedDB.onEmptyDatabases.occurred) {
-				Q.IndexedDB.onEmptyDatabases.occurred = true;
 				if (false === Q.handle(Q.IndexedDB.onEmptyDatabases, Q.IndexedDB)) {
 					callback?.(new Error("Q.IndexedDB.open: aborted due to empty databases"));
 					return;
@@ -6458,6 +6457,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 					return;
 				}
 				db.close();
+				triedCreatingStore = true;
 				tryOpen((db.version || 1) + 1);
 				return;
 			}
