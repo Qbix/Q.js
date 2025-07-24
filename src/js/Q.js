@@ -6428,7 +6428,9 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 
 		req.onupgradeneeded = function () {
 			const db = req.result;
-			if (!db.objectStoreNames.contains(storeName) && !triedCreatingStore) {
+			if (db.version > 1
+			&& !db.objectStoreNames.contains(storeName)
+			&& !triedCreatingStore) {
 				triedCreatingStore = true;
 				const store = db.createObjectStore(storeName, { keyPath: params.keyPath });
 				for (let i = 0; i < indexes.length; ++i) {
