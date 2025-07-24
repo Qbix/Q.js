@@ -3813,10 +3813,11 @@ Q.getter = function _Q_getter(original, options) {
 	
 	var ignoreCache = false;
 	gw.force = function _force() {
+		var key = Q.Cache.key(arguments2, callbacks);
+		_waiting[key] = [];
 		ignoreCache = true;
 		return gw.apply(this, arguments);
 	};
-	
 
 	if (original.batch) {
 		gw.batch = original.batch;
