@@ -6404,6 +6404,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 
 	params = Q.extend({}, Q.getObject([dbName, storeName], Q.IndexedDB.params), params);
 	var indexes = Array.isArray(params.indexes) ? params.indexes : [];
+	var tryCreatingStore = false;
 	var triedCreatingStore = false;
 
 	tryOpen();
@@ -6452,12 +6453,12 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 			}
 
 			if (!db.objectStoreNames.contains(storeName)) {
-				if (triedCreatingStore) {
+				if (tryCreatingStore || triedCreatingStore) {
 					callback && callback(new Error("Store creation failed after upgrade"), db);
 					return;
 				}
+				tryCreatingStore = true;
 				db.close();
-				triedCreatingStore = true;
 				tryOpen((db.version || 1) + 1);
 				return;
 			}
@@ -6477,6 +6478,9 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 			db.transaction(storeName, 'readonly'); // triggers exception if closed
 			callback(s, p); // valid cache
 		} catch (e) {
+			if (e.indexOf('closing') < 0 && e.indexOf('closed') < 0) {
+				return;
+			}
 			// Connection is closing or closed — refresh manually without infinite loop
 			getter.original(dbName, storeName, params, function (err, newDb) {
 				const key = Q.Cache.key(args);
