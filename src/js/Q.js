@@ -3813,7 +3813,7 @@ Q.getter = function _Q_getter(original, options) {
 	
 	var ignoreCache = false;
 	gw.force = function _force() {
-		var key = Q.Cache.key(arguments, callbacks);
+		var key = Q.Cache.key(arguments);
 		_waiting[key] = [];
 		ignoreCache = true;
 		return gw.apply(this, arguments);
