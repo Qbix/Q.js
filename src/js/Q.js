@@ -6406,6 +6406,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 	params = Q.extend({}, Q.getObject([dbName, storeName], Q.IndexedDB.params), params);
 	var indexes = Array.isArray(params.indexes) ? params.indexes : [];
 	var tryCreatingStore = false;
+	var triedCreatingIndexes = false;
 	var triedCreatingStore = false;
 
 	tryOpen();
@@ -6429,9 +6430,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 
 		req.onupgradeneeded = function () {
 			const db = req.result;
-			if (db.version > 1
-			&& !db.objectStoreNames.contains(storeName)
-			&& !triedCreatingStore) {
+			if (db.version > 1 && !db.objectStoreNames.contains(storeName) && !triedCreatingStore) {
 				triedCreatingStore = true;
 				const store = db.createObjectStore(storeName, { keyPath: params.keyPath });
 				for (let i = 0; i < indexes.length; ++i) {
@@ -6456,11 +6455,26 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 			}
 
 			if (!db.objectStoreNames.contains(storeName)) {
-				if (tryCreatingStore || triedCreatingStore) {
+				if (triedCreatingStore || tryCreatingStore) {
 					callback && callback(new Error("Store creation failed after upgrade"), db);
 					return;
 				}
 				tryCreatingStore = true;
+				db.close();
+				tryOpen((db.version || 1) + 1);
+				return;
+			}
+			
+			const tx = db.transaction(storeName, 'readonly');
+			const store = tx.objectStore(storeName);
+			const missingIndexes = indexes.filter(([name]) => !store.indexNames.contains(name));
+
+			if (missingIndexes.length > 0) {
+				if (triedCreatingIndexes) {
+					callback && callback(new Error("Index creation failed after upgrade"), db);
+					return;
+				}
+				triedCreatingIndexes = true;
 				db.close();
 				tryOpen((db.version || 1) + 1);
 				return;
@@ -6481,7 +6495,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 			db.transaction(storeName, 'readonly'); // triggers exception if closed
 			callback(s, p); // valid cache
 		} catch (e) {
-			if (e.indexOf('closing') < 0 && e.indexOf('closed') < 0) {
+			if (e.message?.indexOf('closing') < 0 && e.message?.indexOf('closed') < 0) {
 				return;
 			}
 			// Connection is closing or closed — refresh manually without infinite loop
