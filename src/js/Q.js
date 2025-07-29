@@ -4907,12 +4907,12 @@ if (root.$) {
  *   jQuery object matched by the given selector
  */
 Tp.$ = function _Q_Tool_prototype_$(selector) {
-	if (root.$) {
+	if (root.jQuery) {
 		return selector === undefined
 			? jQuery(this.element)
 			: jQuery(selector, this.element);
 	} else {
-		throw new Q.Error("Tp.$ requires jQuery");
+		return Q.$(selector, this.element, true);
 	}
 };
 
