@@ -6406,7 +6406,6 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 	params = Q.extend({}, Q.getObject([dbName, storeName], Q.IndexedDB.params), params);
 	var indexes = Array.isArray(params.indexes) ? params.indexes : [];
 	var tryCreatingStore = false;
-	var triedCreatingIndexes = false;
 	var triedCreatingStore = false;
 
 	tryOpen();
@@ -6460,21 +6459,6 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 					return;
 				}
 				tryCreatingStore = true;
-				db.close();
-				tryOpen((db.version || 1) + 1);
-				return;
-			}
-			
-			const tx = db.transaction(storeName, 'readonly');
-			const store = tx.objectStore(storeName);
-			const missingIndexes = indexes.filter(([name]) => !store.indexNames.contains(name));
-
-			if (missingIndexes.length > 0) {
-				if (triedCreatingIndexes) {
-					callback && callback(new Error("Index creation failed after upgrade"), db);
-					return;
-				}
-				triedCreatingIndexes = true;
 				db.close();
 				tryOpen((db.version || 1) + 1);
 				return;
