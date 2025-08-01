@@ -50,6 +50,29 @@ Q.Tool.define('Q/lazyload', function (options) {
 		tool.observer = _createObserver(tool, p);
 		tool.observe(tool.prepare(tool.element, false));
 
+		// Add mutation observer to detect direct DOM removals
+		Q.ensure('MutationObserver', function () {
+			var removalObserver = new MutationObserver(mutations => {
+				for (var mutation of mutations) {
+					for (var node of mutation.removedNodes) {
+						if (!(node instanceof HTMLElement)) continue;
+						tool.unobserve([node]); // safety
+						forEachLazyElement(node, el => {
+							Q.each(tool.state.handlers, function (name, info) {
+								if (el.matches(info.selector)) {
+									info.exiting?.call(tool, el);
+								}
+							});
+						});
+					}
+				}
+			});
+			removalObserver.observe(state.root || document.body, {
+				childList: true,
+				subtree: true
+			});
+		});
+
 		// Override innerHTML
 
 		var originalSet = Object.getOwnPropertyDescriptor(Elp, 'innerHTML').set;
@@ -251,7 +274,7 @@ Q.Tool.define('Q/lazyload', function (options) {
 					// and prevent all the elements shifting. However, if the container
 					// itself is resizing, then we will remove this snapshot since things
 					// will shift anyway.
-					const cs = element.computedStyle();
+					var cs = element.computedStyle();
 					tool.frozenDimensions.set(element, {
 						width: element.style.width,
 						height: element.style.height,
@@ -376,5 +399,17 @@ function _createObserver(tool, container) {
 
 Q.lazyload = Q.lazyload || {};
 var _loadedImages = Q.lazyload.loadedImages = {};
+
+function forEachLazyElement(container, callback) {
+	for (var handler of Object.values(Q.Tool.tools['Q/lazyload']?.state?.handlers || {})) {
+		var elements = container.querySelectorAll?.(handler.selector) || [];
+		if (container.matches?.(handler.selector)) {
+			callback(container);
+		}
+		for (var el of elements) {
+			callback(el);
+		}
+	}
+}
 
 })(Q, Q.jQuery);
