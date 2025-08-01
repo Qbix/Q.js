@@ -1445,6 +1445,7 @@ Q.normalize = function _Q_normalize(text, replacement, characters, numChars, kee
 };
 
 Q.normalize.regexpASCII = new RegExp("[^A-Za-z0-9]+", "g");
+Q.normalize.regexpUNICODE = new RegExp("[^\\p{L}0-9]+", "gu");
 
 /**
  * A simplified version of Q.normalize that remembers results, to avoid
@@ -3111,6 +3112,18 @@ Q.ensure.loaders = {
 			return callback && callback(property);
 	 	}
 		Q.addScript('{{Q}}/js/polyfills/IntersectionObserver.js', function () {
+			callback && callback(property);
+		});
+	},
+	'MutationObserver': function (property, callback) {
+		if ('MutationObserver' in window) {
+			return callback && callback(property);
+		}
+		// Optional fallback loader (if you want to support old environments)
+		Q.addScript('{{Q}}/js/polyfills/MutationObserver.js', function () {
+			if (!('MutationObserver' in window)) {
+				console.error('MutationObserver still not available after polyfill.');
+			}
 			callback && callback(property);
 		});
 	}
@@ -12867,10 +12880,10 @@ Q.Visual = Q.Pointer = {
 	 * @static
 	 * @method relatedTarget
 	 * @param {Q.Event} e Some mouse or touch event from the DOM
-	 * @return {number}
+	 * @return {HTMLElement}
 	 */
 	relatedTarget: function (e) {
-		e.relatedTarget = e.relatedTarget || (e.type == 'mouseover' ? e.fromElement : e.toElement);	
+		return e.relatedTarget = e.relatedTarget || (e.type == 'mouseover' ? e.fromElement : e.toElement);	
 	},
 	/**
 	 * Computes the offset of an element relative to the browser
@@ -14221,9 +14234,6 @@ Q.onInit.add(function () {
 				return;
 			}
 			Q.extend(Q.text.Q, 10, text);
-			Q.extend(Q.confirm.options, 10, Q.text.Q.confirm);
-			Q.extend(Q.prompt.options, 10, Q.text.Q.prompt);
-			Q.extend(Q.alert.options, 10, Q.text.Q.alert);
 			var QtQw = Q.text.Q.words;
 			QtQw.ClickOrTap = useTouchEvents ? QtQw.Tap : QtQw.Click;
 			QtQw.clickOrTap = useTouchEvents ? QtQw.tap : QtQw.click;
@@ -14981,6 +14991,7 @@ Q.stackTrace = function() {
 
 /**
  * Use it like this: foo.bar = Q.hook(foo.bar, console.trace);
+ * Supports sync and async functions transparently.
  * @method hook
  * @static
  * @param {Function} original 
@@ -14988,13 +14999,29 @@ Q.stackTrace = function() {
  * @param {Function} [hookAfter] 
  * @return {Function} the function with before/after hooks applied
  */
-Q.hook = function (original, hookBefore, hookAfter)  {
-	var hooked = function _Q_hook () {
-		hookBefore && hookBefore.apply(this, arguments);
-		var result = original.apply(this, arguments);
-		hookAfter && hookAfter.apply(this, arguments);
-		return result;
-	};
+Q.hook = function (original, hookBefore, hookAfter) {
+	const isAsync = original.constructor.name === "AsyncFunction" ||
+		(hookBefore && hookBefore.constructor.name === "AsyncFunction") ||
+		(hookAfter && hookAfter.constructor.name === "AsyncFunction");
+
+	let hooked;
+
+	if (isAsync) {
+		hooked = async function _Q_hook_async(...args) {
+			if (hookBefore) await hookBefore.apply(this, args);
+			const result = await original.apply(this, args);
+			if (hookAfter) await hookAfter.apply(this, args);
+			return result;
+		};
+	} else {
+		hooked = function _Q_hook(...args) {
+			if (hookBefore) hookBefore.apply(this, args);
+			const result = original.apply(this, args);
+			if (hookAfter) hookAfter.apply(this, args);
+			return result;
+		};
+	}
+
 	hooked.original = original;
 	return hooked;
 };
@@ -15017,6 +15044,7 @@ Q.hook = function (original, hookBefore, hookAfter)  {
 Q.removeCurrentScript = function() {
 	var cs;
 	cs = document.currentScript || document.scripts[document.scripts.length - 1];
+	cs.textContent = '';
 	cs.parentElement.removeChild(cs);
 };
 
