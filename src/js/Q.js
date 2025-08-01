@@ -1045,7 +1045,7 @@ Q.isInteger = function _Q_isInteger(value, strictComparison) {
  *	Whether it is an array
  */
 Q.isArrayLike = function _Q_isArrayLike(value) {
-	return (Q.typeOf(value) === 'array') || (window.$ && value instanceof $);
+	return (Q.typeOf(value) === 'array') || (window.$ && window.$.prototype && value instanceof window.$);
 };
 
 /**
@@ -1130,12 +1130,20 @@ Q.copy = function _Q_copy(x, fields, levels) {
 	}
 	var result = Q.objectWithPrototype(Object.getPrototypeOf(x)), i, k, l;
 	if (fields) {
-		for (i=0, l = fields.length; i<l; ++i) {
-			k = fields[i];
-			if (!(k in x)) {
-				continue;
+		for (i = 0, l = fields.length; i < l; ++i) {
+			var path = fields[i].split('.');
+			var value = x;
+			for (var j = 0; j < path.length; ++j) {
+				if (value && typeof value === 'object') {
+					value = value[path[j]];
+				} else {
+					value = undefined;
+					break;
+				}
 			}
-			result[k] = levels ? Q.copy(x[k], null, levels-1) : x[k];
+			if (typeof value !== 'undefined') {
+				result[fields[i]] = levels ? Q.copy(value, null, levels - 1) : value;
+			}
 		}
 	} else {
 		for (k in x) {
@@ -1381,7 +1389,7 @@ Q.mixin = function _Q_mixin(A /*, B, ... */) {
 	A.staticProperty = function _staticProperty(propName) {
 		for (var i=0; i<A.__mixins.length; ++i) {
 			if (propName in A.__mixins[i]) {
-				return A.__mixins[i].propName;
+				return A.__mixins[i][propName];
 			}
 		}
 		return undefined;
@@ -1670,8 +1678,8 @@ Q.chain = function (callbacks) {
  * @method promisify
  * @static
  * @param  {Function} getter A function that takes arguments that include a callback and passes err as the first parameter to that callback, and the value as the second argument.
- * @param {Boolean} [useThis] whether to resolve the promise with the "this" instead of the second argument.
- * @param {Number|Array} [callbackIndex] Which argument the getter is expecting the callback, if any.
+ * @param {Boolean|string} useThis whether to resolve the promise with the "this" instead of the second argument.
+ * @param {Number|Array} callbackIndex Which argument the getter is expecting the callback, if any.
  *  For cordova-style functions pass an array of indexes for the
  *  onSuccess, onFailure callbacks, respectively.
  * @return {Function} a wrapper around the function that returns a promise, extended with the original function's return value if it's an object
@@ -1682,49 +1690,70 @@ Q.promisify = function (getter, useThis, callbackIndex) {
 			return getter.apply(this, args);
 		}
 		var args = [], resolve, reject, found = false;
-		Q.each(arguments, function (i, ai) {
-			if (typeof ai !== 'function') {
-				args.push(ai);
-			} else {
-				found = true;
-				args.push(function _promisified(err, second) {
-					try {
-						ai.apply(this, arguments);
-					} catch (e) {
-						err = e;
-					}
-					if (err) {
-						return reject(err);
-					}
-					resolve(useThis ? this : second);
-				});
-			}
-		});
-		if (!found) {
-			if (callbackIndex instanceof Array) {
-				(0 in callbackIndex) && (args[callbackIndex[0]] = function _onResolve(value) {
-					return resolve(value);
-				});
-				(1 in callbackIndex) && (args[callbackIndex[1]] = function _onReject(value) {
-					return reject(value);
-				});
-			} else {
-				var ci = (callbackIndex === undefined) ? args.length : callbackIndex;
-				if (args.length < ci) {
-					throw new Q.Exception("Q.promisify: Too few arguments");
-				}
-				args.splice(ci, 0, function _defaultCallback(err, second) {
-					if (err) {
-						return reject(err);
-					}
-					resolve(useThis ? this : second);
-				});
-			}
-		}
 		var promise = new Q.Promise(function (r1, r2) {
 			resolve = r1;
 			reject = r2;
 		});
+		Q.each(arguments, function (i, ai) {
+			if (callbackIndex instanceof Array
+			&& callbackIndex[0] == i) {
+				found = true;
+				args.push(function _onResolve(value) {
+					if (ai instanceof Function) {
+						try {
+							return ai.apply(this, arguments);
+						} catch (e) {
+							return;
+						}
+					}
+					return resolve(value);
+				});
+			} else if (callbackIndex instanceof Array
+			&& callbackIndex[1] == i) {
+				found = true;
+				args.push(function _onReject(value) {
+					if (ai instanceof Function) {
+						try {
+							return ai.apply(this, arguments);
+						} catch (e) {
+							return;
+						}
+						return;
+					}
+					return reject(value);
+				});
+			} else if (!(ai instanceof Function)) {
+				args.push(ai);
+			} else {
+				found = true;
+				args.push(_promisified);
+				function _promisified(err, second) {
+					if (ai instanceof Function) {
+						return ai.apply(this, arguments);
+					}
+					if (err) {
+						return reject(err);
+					}
+					resolve(useThis ? this : second);
+				}
+			}
+		});
+		if (callbackIndex instanceof Array) {
+			if (callbackIndex[0] && args.length <= callbackIndex[0]) {
+				args[callbackIndex[0]] = resolve;
+			}
+			if (callbackIndex[1] && args.length <= callbackIndex[1]) {
+				args[callbackIndex[1]] = reject;
+			}
+		} else if (!found) {
+			var ci = (callbackIndex === undefined) ? args.length : callbackIndex;
+			args.splice(ci, 0, function _defaultCallback(err, second) {
+				if (err) {
+					return reject(err);
+				}
+				resolve(useThis ? this : second);
+			});
+		}
 		try {
 			return Q.extend(promise, getter.apply(this, args));
 		} catch (e) {
@@ -2005,10 +2034,8 @@ Q.$ = function (selector, container, toArray) {
 };
 
 /**
- * Like a timestamp, but works with number of Gregorian Calendar 
- * days since fictional epoch year=0, month=0, day=1.
- * You can store daystamps and do arithmetic with them.
- * @class Daystamp
+ * Functionality related to regular expressions
+ * @class RegExp
  */
 Q.RegExp = {
 	/**
@@ -3765,10 +3792,11 @@ Q.getter = function _Q_getter(original, options) {
 	
 	var ignoreCache = false;
 	gw.force = function _force() {
+		var key = Q.Cache.key(arguments);
+		_waiting[key] = [];
 		ignoreCache = true;
 		return gw.apply(this, arguments);
 	};
-	
 
 	if (original.batch) {
 		gw.batch = original.batch;
@@ -4223,8 +4251,9 @@ Q.Tool.define = function (name, /* require, */ ctor, defaultOptions, stateKeys, 
 				Q.Text.get(c.text, p.fill('text'));
 			}
 			if (c.css) {
+				var slotName = name.split('/')[0];
 				waitFor.push('css');
-				Q.addStylesheet(c.css, p.fill('css'));
+				Q.addStylesheet(c.css, null, p.fill('css'), {slotName: slotName});
 			}
 			p.add(waitFor, 1, function (params) {
 				if (params && params.text && params.text[1]) {
@@ -4317,6 +4346,47 @@ var _qtc = Q.Tool.constructors = {};
 var _qtp = Q.Tool.placeholders = {};
 
 var Tp = Q.Tool.prototype;
+
+/**
+ * Use this to render a template into a tool's element,
+ * using its prefix for any tools inside the template.
+ * This function also extends the tool.elements object
+ * with elements defined in the template and found with
+ * tool.element.querySelector() inside the element.
+ * It also activates the content inside the tool, if any.
+ * @method renderTemplate
+ * @param {String|Object} name See Q.Template.render and Q.Template.load
+ * @param {Object} [fields] The fields to pass to the template when rendering it.
+ * @param {Function} [callback] a callback - receives (error) or (error, html)
+ * @param {Object} [options={}] Options for the template engine compiler. See Q.Template.render.
+ *  Also used as options for Q.activate()
+ * @return {Promise} can use this instead of callback
+ */
+Tp.renderTemplate = Q.promisify(function (name, fields, callback, options) {
+	var tool = this;
+	return Q.Template.render(name, fields || {}, function (err, html) {
+		if (err) {
+			return callback && callback(err);
+		}
+		Q.replace(tool.element, html);
+		var n = Q.normalize.memoized(name);
+		var info = Q.Template.info[n];
+		if (!tool.elements) {
+			tool.elements = {};
+		}
+		for (var k in info.elements || {}) {
+			tool.elements[k] = tool.element.querySelector(info.elements[k]);
+		}
+		if (options && options.beforeActivate) {
+			callback && callback.call(tool, null, html, tool.elements, tools, options);
+		}
+		Q.activate(tool.element.children, options, function (elem, tools, options) {
+			callback && callback.call(this, null, html, tool.elements, tools, options);
+		});
+	}, Q.extend({
+		tool: tool
+	}, options));
+}, false, 2);
 
 /**
  * Call this after changing one more values in the state.
@@ -4816,12 +4886,12 @@ if (root.$) {
  *   jQuery object matched by the given selector
  */
 Tp.$ = function _Q_Tool_prototype_$(selector) {
-	if (root.$) {
+	if (root.jQuery) {
 		return selector === undefined
 			? jQuery(this.element)
 			: jQuery(selector, this.element);
 	} else {
-		throw new Q.Error("Tp.$ requires jQuery");
+		return Q.$(selector, this.element, true);
 	}
 };
 
@@ -5285,8 +5355,10 @@ function _loadToolScript(toolElement, callback, shared, parentId, options) {
 		}
 		// start loading css and text at the same time as the js and html
 		if (toolConstructor.css) {
+			var n = Q.Tool.names[toolName];
+			var slotName = (n && n.split('/')[0]) || '';
 			waitFor.push('css');
-			Q.addStylesheet(toolConstructor.css, pipe.fill('css'));
+			Q.addStylesheet(toolConstructor.css, null, pipe.fill('css'), {slotName: slotName});
 		}
 		var n = Q.normalize.memoized(toolName);
 		var text = Q.Text.addedFor('Q.Tool.define', n, toolConstructor);
@@ -6262,68 +6334,146 @@ Q.Cache.session.caches = {};
  * @constructor
  * @param {String} uriString
  */
-Q.IndexedDB = {};
+Q.IndexedDB = {
+	/**
+	* Store and customize your text strings under Q.text
+	* @property {Object} Store Q.IndexedDB.params[dbName][storeName] = params for IndexedDB.open()
+	*/
+	params: {},
+	/**
+	* Store and customize your text strings under Q.text
+	* @property {Q.Event} This event is fired during Q.IndexedDB.open() when
+	*   all databases are discovered to have version <= 1
+	*/
+	onEmptyDatabases: new Q.Event()
+};
 
 /**
- * Creates or uses an existing database and object store name.
- * @static
+ * Opens an IndexedDB database and ensures the object store exists.
+ * Uses Q.getter internally to cache and reuse database connections per dbName.
+ * 
+ * Automatically upgrades the schema if the object store or indexes are missing.
+ * Detects and recovers from stale or closed connections, such as when resuming from background.
+ * 
+ * If the callback is provided, it will be called with (err, objectStore, db).
+ * If no callback is provided, returns a Promise that resolves to the IDBDatabase.
+ * 
  * @method open
- * @param {String} dbName The name of the database
- * @param {String} storeName The name of the object store name inside the database
- * @param {String|Object} params Parameters for creating the key store.
- *   You can also pass a string here, if you're just specifying the keyPath.
- * @param {String} params.keyPath The key path inside the object store.
- * @param {Array} params.indexes Array of arrays for createIndex consisting of [indexName, keyPath, options]
- * @param {Function} callback Receives (error, ObjectStore)
- * @return {Q.Promise}
+ * @param {String} dbName The name of the IndexedDB database
+ * @param {String} storeName The name of the object store to ensure exists
+ * @param {String|Object} params Either a string keyPath, or an object: { keyPath, indexes }
+ * @param {String} [params.keyPath] The keyPath to use when creating the object store
+ * @param {Array} [params.indexes] Optional array of [indexName, keyPath, options] entries
+ * @param {Function} [callback] Optional Node-style callback with (err, objectStore, db)
+ * @return {Promise<IDBDatabase>} Resolves with the open IDBDatabase if no callback is passed
  */
-Q.IndexedDB.open = Q.promisify(function (dbName, storeName, params, callback) {
+Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 	if (!root.indexedDB) {
-		return false;
+		const err = new Error("IndexedDB not supported");
+		if (callback) callback(err);
+		return false; // prevents Q.getter from caching failure
 	}
-	var keyPath = (typeof params === 'string' ? params : params.keyPath);
-	var open = indexedDB.open(dbName);
-	var _triedAddingObjectStore = false;
-	open.onupgradeneeded = function() {
-		var db = this.result;
-		if (!db.objectStoreNames.contains(storeName)
-		&& !_triedAddingObjectStore) {
-			_triedAddingObjectStore = true;
-			var store = db.createObjectStore(storeName, {keyPath: keyPath});
-			var idxs = params.indexes;
-			if (idxs) {
-				for (var i=0, l=idxs.length; i<l; ++i) {
-					store.createIndex(idxs[i][0], idxs[i][1], idxs[i][2]);
+
+	if (typeof params === 'string') {
+		params = { keyPath: params };
+	}
+	if (typeof params === 'function') {
+		callback = params;
+		params = {};
+	}
+
+	params = Q.extend({}, Q.getObject([dbName, storeName], Q.IndexedDB.params), params);
+	var indexes = Array.isArray(params.indexes) ? params.indexes : [];
+	var tryCreatingStore = false;
+	var triedCreatingStore = false;
+
+	tryOpen();
+
+	async function tryOpen(version) {
+		// Check for empty (only version=1) databases
+		try {
+			var dbs = await indexedDB.databases();
+			var hasUpgraded = dbs.some(db => (db.version || 0) > 1);
+			if (!hasUpgraded && !Q.IndexedDB.onEmptyDatabases.occurred) {
+				if (false === Q.handle(Q.IndexedDB.onEmptyDatabases, Q.IndexedDB)) {
+					callback && callback(new Error("Q.IndexedDB.open: aborted due to empty databases"));
+					return;
 				}
 			}
+		} catch (e) {
+			// ignore indexedDB.databases errors on older browsers
 		}
-	};
-	open.onversionchange = function () {
-		db.close();
-	};
-	open.onerror = function (error) {
-		callback && callback.call(Q.IndexedDB, error);
-	};
-	open.onsuccess = function() {
-		var db = this.result;
-		var version = db.version;
-		if (!db.objectStoreNames.contains(storeName)) {
-			// need to upgrade version and add this store
-			++version;
-			db.close();
-			var o = indexedDB.open(dbName, version);
-			Q.take(open, ['onupgradeneeded', 'onerror', 'onsuccess'], o);
-			return;
-		}
-		// Start a new transaction
-		var tx = db.transaction(storeName, "readwrite");
-		var store = tx.objectStore(storeName);
-		callback && callback.call(Q.IndexedDB, null, store);
-		// Close the db when the transaction is done
-		tx.oncomplete = function() {
-			db.close();
+
+		const req = version ? indexedDB.open(dbName, version) : indexedDB.open(dbName);
+
+		req.onupgradeneeded = function () {
+			const db = req.result;
+			if (db.version > 1 && !db.objectStoreNames.contains(storeName) && !triedCreatingStore) {
+				triedCreatingStore = true;
+				const store = db.createObjectStore(storeName, { keyPath: params.keyPath });
+				for (let i = 0; i < indexes.length; ++i) {
+					const [name, keyPath, opts] = indexes[i];
+					store.createIndex(name, keyPath, opts);
+				}
+			}
 		};
-	};
+
+		req.onerror = function (e) {
+			callback && callback(e.target.error || new Error("IndexedDB open error"));
+		};
+
+		req.onsuccess = function () {
+			const db = req.result;
+
+			if (!db._versionchangeAttached) {
+				db._versionchangeAttached = true;
+				db.onversionchange = function () {
+					db.close();
+				};
+			}
+
+			if (!db.objectStoreNames.contains(storeName)) {
+				if (triedCreatingStore || tryCreatingStore) {
+					callback && callback(new Error("Store creation failed after upgrade"), db);
+					return;
+				}
+				tryCreatingStore = true;
+				db.close();
+				tryOpen((db.version || 1) + 1);
+				return;
+			}
+
+			callback && callback(null, db);
+		};
+	}
+}, {
+	cache: Q.Cache.document("Q.IndexedDB.open", 10),
+	resolveWithSecondArgument: true,
+	prepare: function (s, p, callback, args) {
+		const getter = this;
+		const [dbName, storeName, params] = args;
+		const db = p[1];
+
+		try {
+			db.transaction(storeName, 'readonly'); // triggers exception if closed
+			callback(s, p); // valid cache
+		} catch (e) {
+			if (e.message?.indexOf('closing') < 0 && e.message?.indexOf('closed') < 0) {
+				return;
+			}
+			// Connection is closing or closed — refresh manually without infinite loop
+			getter.original(dbName, storeName, params, function (err, newDb) {
+				const key = Q.Cache.key(args);
+				if (!err && getter.cache) {
+					const cached = getter.cache.get(key);
+					if (cached) {
+						getter.cache.set(key, cached.cbpos, s, arguments);
+					}
+				}
+				callback.apply(getter, arguments);
+			});
+		}
+	}
 });
 Q.IndexedDB.put = Q.promisify(function (store, value, callback) {
 	_DB_addEvents(store, store.put(value), callback);
@@ -8997,14 +9147,18 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 		onload();
 	}
 
-	var o = Q.extend({}, Q.addScript.options, options);
-
 	if (typeof media === 'function') {
 		options = onload; onload = media; media = undefined;
 	} else if (Q.isPlainObject(media) && !(media instanceof Q.Event)) {
 		options = media; media = null;
 	}
-	options = options || {};
+	var o = Q.extend({}, Q.addScript.options, options);
+	if (!o.slotName && Q.Tool.beingActivated) {
+		var n = Q.Tool.names[Q.Tool.beingActivated.name];
+		if (n) {
+			o.slotName = n.split('/')[0];
+		}
+	}
 	if (!onload) {
 		onload = function () { };
 	}
@@ -9025,13 +9179,13 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 		});
 		return ret;
 	}
-	var container = options.container || document.getElementsByTagName('head')[0];
+	var container = o.container || document.getElementsByTagName('head')[0];
 
 	if (!href) {
 		onload(false);
 		return false;
 	}
-	options.info = {};
+	o.info = {};
 	href = Q.url(href, null, options);
 	var href2 = href.split('?')[0];
 	
@@ -9080,7 +9234,7 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 		|| Q.addStylesheet.loaded[href2]
 		|| !Q.addStylesheet.added[href2]) {
 			onload();
-			return options.returnAll ? e : false;
+			return o.returnAll ? e : false;
 		}
 		if (!Q.addStylesheet.onLoadCallbacks[href2]) {
 			Q.addStylesheet.onLoadCallbacks[href2] = [];
@@ -9104,7 +9258,7 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 			}
 			e.wasProcessedByQ = true;
 		}
-		return options.returnAll ? e : false; // don't add
+		return o.returnAll ? e : false; // don't add
 	}
 
 	// Create the stylesheet's tag and insert it into the document
@@ -9112,9 +9266,9 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 	link.setAttribute('rel', 'stylesheet');
 	link.setAttribute('type', 'text/css');
 	link.setAttribute('media', media);
-	if (options.info.h && !options.skipIntegrity) {
+	if (o.info.h && !o.skipIntegrity) {
 		if (Q.info.urls && Q.info.urls.integrity) {
-			link.setAttribute('integrity', 'sha256-' + options.info.h);
+			link.setAttribute('integrity', 'sha256-' + o.info.h);
 		}
 	}
 	Q.addStylesheet.added[href] = true;
@@ -9124,9 +9278,9 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 	link.setAttribute('href', href);
 	var elements = document.querySelectorAll('link[data-slot], style[data-slot]');
 	var insertBefore = null;
-	if (Q.allSlotNames && options.slotName) {
-		link.setAttribute('data-slot', options.slotName);
-		var slotIndex = Q.allSlotNames.indexOf(options.slotName);
+	if (Q.allSlotNames && o.slotName) {
+		link.setAttribute('data-slot', o.slotName);
+		var slotIndex = Q.allSlotNames.indexOf(o.slotName);
 		for (var j=0; j<elements.length; ++j) {
 			e = elements[j];
 			var slotName = e.getAttribute('data-slot');
@@ -9179,7 +9333,7 @@ Q.ServiceWorker = {
 			navigator.serviceWorker.register(src)
 			.then(function (registration) {
 				log("Q.ServiceWorker.register", registration);
-				if (options.update) {
+				if (o.update) {
 					registration.update();
 				}
 				registration.removeEventListener("updatefound", _onUpdateFound);
