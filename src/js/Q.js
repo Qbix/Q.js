@@ -6385,15 +6385,18 @@ Q.IndexedDB = {
 };
 
 /**
- * Opens an IndexedDB database and ensures the object store exists.
+ * Opens an IndexedDB database and ensures the object store and indexes exist.
  * Uses Q.getter internally to cache and reuse database connections per dbName.
- * 
- * Automatically upgrades the schema if the object store or indexes are missing.
- * Detects and recovers from stale or closed connections, such as when resuming from background.
- * 
+ *
+ * Automatically upgrades the schema if the object store is missing, or if
+ * Q.Cordova.IndexedDB.forceRecreate is true and required indexes are missing.
+ *
+ * - Increments the database version and recreates the store if needed.
+ * - Detects and recovers from stale or closed connections (e.g., after background resume).
+ *
  * If the callback is provided, it will be called with (err, objectStore, db).
  * If no callback is provided, returns a Promise that resolves to the IDBDatabase.
- * 
+ *
  * @method open
  * @param {String} dbName The name of the IndexedDB database
  * @param {String} storeName The name of the object store to ensure exists
@@ -6467,15 +6470,41 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 					db.close();
 				};
 			}
+			
+			var storeNeedsRecreate = false;
+			try {
+				if (!db.objectStoreNames.contains(storeName)) {
+					storeNeedsRecreate = true;
+				} else if (Q.getObject('Q.Cordova.IndexedDB.forceRecreate')) {
+					var tx = db.transaction(storeName, 'readonly');
+					var store = tx.objectStore(storeName);
+					for (var i = 0; i < indexes.length; ++i) {
+						var indexName = indexes[i][0];
+						try {
+							store.index(indexName); // throws if missing
+						} catch (e) {
+							storeNeedsRecreate = true;
+							break;
+						}
+					}
+				}
+			} catch (e) {
+				// In case of transaction issues, play it safe
+				storeNeedsRecreate = true;
+			}
 
-			if (!db.objectStoreNames.contains(storeName)) {
+			if (storeNeedsRecreate) {
 				if (triedCreatingStore || tryCreatingStore) {
 					callback && callback(new Error("Store creation failed after upgrade"), db);
 					return;
 				}
 				tryCreatingStore = true;
 				db.close();
-				tryOpen((db.version || 1) + 1);
+				var DB_VERSION_KEY = 'Q.Cordova.IndexedDB.version.' + dbName;
+				var localVersion = parseInt(localStorage[DB_VERSION_KEY] || "1", 10);
+				var nextVersion = Math.max(db.version || 1, localVersion) + 1;
+				localStorage[DB_VERSION_KEY] = nextVersion;
+				tryOpen(nextVersion);
 				return;
 			}
 
@@ -6494,8 +6523,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 			db.transaction(storeName, 'readonly'); // triggers exception if closed
 			callback(s, p); // valid cache
 		} catch (e) {
-			if (e.message && e.message.indexOf('closing') < 0 
-			&& e.message.indexOf('closed') < 0) {
+			if (e.message?.indexOf('closing') < 0 && e.message?.indexOf('closed') < 0) {
 				return;
 			}
 			// Connection is closing or closed — refresh manually without infinite loop
