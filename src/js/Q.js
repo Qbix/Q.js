@@ -1335,7 +1335,7 @@ Q.take = function _Q_take(source, fields, result) {
  */
 Q.shuffle = function _Q_shuffle( arr ) {
 	var i = arr.length;
-	if ( !i ) return false;
+	if ( !i ) return arr;
 	while ( --i ) {
 		var j = Math.floor( Math.random() * ( i + 1 ) );
 		var tempi = arr[i];
@@ -1430,9 +1430,8 @@ Q.normalize = function _Q_normalize(text, replacement, characters, numChars, kee
 	}
 	if (!numChars) numChars = 200;
 	if (replacement === undefined) replacement = '_';
-	characters = characters || (
-		characters === true ? Q.normalize.regexpASCII : Q.normalize.regexpUNICODE
-	);
+	if (characters === true) characters = Q.normalize.regexpASCII;
+	else if (!characters) characters = Q.normalize.regexpUNICODE;
 	if (!keepCaseIntact) {
 		text = text.toLowerCase();
 	}
@@ -1687,7 +1686,7 @@ Q.chain = function (callbacks) {
 Q.promisify = function (getter, useThis, callbackIndex) {
 	function _promisifier() {
 		if (!Q.Promise) {
-			return getter.apply(this, args);
+			return getter.apply(this, arguments);
 		}
 		var args = [], resolve, reject, found = false;
 		var promise = new Q.Promise(function (r1, r2) {
@@ -2302,7 +2301,7 @@ Q.Event.from = function _Q_Event_from(target, eventName) {
 	var event = new Q.Event();
 	Q.addEventListener(target, eventName, event.handle);
 	event.onEmpty().set(function () {
-		Q.removeEventListener(target, eventName, event.handler);
+		Q.removeEventListener(target, eventName, event.handle);
 	});
 	return event;
 };
@@ -3075,9 +3074,9 @@ Q.ensure = function _Q_ensure(property, callback) {
 		} else if (typeof loader === 'function') {
 			loader(property, callback);
 		} else if (loader instanceof Q.Event) {
-			loader.addOnce(property, function _loaded() {
+			loader.addOnce(function _loaded() {
 				callback && callback(property);
-			});
+			}, property);
 		}
 	});
 };
@@ -4708,7 +4707,7 @@ Tp.remove = function _Q_Tool_prototype_remove(removeCached, removeElementAfterLa
 
 	var i;
 	var shouldRemove = removeCached
-		|| !this.element.getAttribute('data-Q-retain') !== null;
+		|| this.element.getAttribute('data-Q-retain') === null;
 	if (!shouldRemove || !Q.Tool.active[this.id]) {
 		return false;
 	}
@@ -5006,6 +5005,7 @@ Q.Tool.encodeOptions = function _Q_Tool_encodeOptions(options) {
  */
 Tp.updateElementOptions = function _Q_Tool_updateElementOptions(options) {
 	var attrName = 'data-' + this.name.replace('_', '-');
+	var attrName = 'data-' + this.name.replace(new RegExp('_', 'g'), '-');
 	this.element.setAttribute(attrName, JSON.stringify(options));
 };
 
@@ -5186,7 +5186,7 @@ Q.Tool.from = function _Q_Tool_from(toolElement, toolName, useClosest) {
 	}
 	if (useClosest) {
 		var className = toolName.split('/').join('_')+'_tool';
-		toolElement = toolElement.closest('.'+className);
+		toolElement = toolElement && toolElement.closest('.'+className);
 	}
 	return toolElement && toolElement.Q ? toolElement.Q(toolName) : null;
 };
@@ -5248,10 +5248,10 @@ Q.Tool.byName = function _Q_Tool_byName(name) {
  * @param {String} id the id or prefix of an existing tool or its element
  * @return {String}
  */
-Q.Tool.calculatePrefix = function _Q_Tool_calculatePrefix(id) {
+Q.Tool.calculatePrefix = function _Q_Tool_calculateId(id) {
 	if (id.match(/_tool$/)) {
 		return id.substring(0, id.length-4);
-	} else if (id.substring(id.lengh-1) === '_') {
+	} else if (id.substring(id.length-1) === '_') {
 		return id;
 	} else {
 		return id + "_";
@@ -5746,7 +5746,7 @@ Q.Response.processMetas = function Q_Response_processMetas(response) {
 			});
 			if (!found) {
 				var meta = document.createElement("meta");
-				meta.setAttribute(this.name, metaData.value);
+				meta.setAttribute(metaData.name, metaData.value);
 				meta.setAttribute("content", metaData.content);
 				elHead.appendChild(meta);
 				return;
@@ -7061,46 +7061,39 @@ Q.loadHandlebars = Q.getter(function _Q_loadHandlebars(callback) {
  * @return {Number}
  */
 Q.fixedOffset = function (from, filter) {
-	var elements = document.body.getElementsByClassName('Q_fixed_'+from);
+	from = from || 'top';
+	var elements = document.body.getElementsByClassName('Q_fixed_' + from);
 	var result = 0;
+
 	Q.each(elements, function () {
 		if (Q.isArrayLike(filter)) {
-			var classes = this.className.split(' ');
-			if (false === Q.each(filter, function (i, item) {
+			var classes = (this.className || '').split(' ');
+			var skip = false;
+			Q.each(filter, function (_, item) {
+				if (typeof item === 'string' && classes.indexOf(item) >= 0) {
+					skip = true; return false;
+				}
+			});
+			if (skip) return;
+			var anyElems = false, isSibling = false, el = this;
+			Q.each(filter, function (_, item) {
 				if (item instanceof HTMLElement) {
-					if (false !== Q.each(this.parentElement.childNodes, function () {
-						if (this === filter) {
-							return false;
-						}
-					})) {
-						return false;
-					}
-				} else if (typeof item === 'string') {
-					if (classes.indexOf(item) >= 0) {
-						return false;
+					anyElems = true;
+					if (item.parentElement && el.parentElement === item.parentElement) {
+						isSibling = true; return false;
 					}
 				}
-			})) {
-				return;
-			}
+			});
+			if (anyElems && !isSibling) return;
 		}
-		if (typeof filter === 'function' && !filter.apply(this)) {
-			return;
-		}
+
+		if (typeof filter === 'function' && !filter.call(this)) return;
+
 		var rect = this.getBoundingClientRect();
-		switch (from) {
-			case 'top':
-			case 'bottom':
-				result += rect.height;
-				break;
-			case 'left': 
-			case 'right':
-				result += rect.width;
-				break;
-			default:
-				return;
-		}
+		if (from === 'left' || from === 'right') result += rect.width;
+		else if (from === 'top' || from === 'bottom') result += rect.height;
 	});
+
 	return result;
 };
 
@@ -7704,15 +7697,14 @@ Q.addEventListener = function _Q_addEventListener(element, eventName, eventHandl
 	return handler;
 };
 Q.addEventListener.hooks = [];
+
 function _Q_Event_stopPropagation() {
 	var event = this;
 	Q.each(Q.addEventListener.hooks, function () {
 		var element = this[0];
 		var matches = element === root
-		|| element === document
-		|| (element instanceof Element
-			&& element !== event.target
-		    && element.contains(event.target));
+			|| element === document
+			|| (element instanceof Element && element !== event.target && element.contains(event.target));
 		if (matches && this[1] === event.type) {
 			this[2].apply(element, [event]);
 		}
@@ -7721,7 +7713,7 @@ function _Q_Event_stopPropagation() {
 	if (p) {
 		p.apply(event, arguments);
 	} else {
-		event.cancelBubble = false;
+		event.cancelBubble = true; // <-- must be true to stop bubbling
 	}
 }
 _Q_Event_stopPropagation.previous = Event.prototype.stopPropagation;
@@ -8850,7 +8842,7 @@ Q.updateUrls = function(callback) {
 					Q.cookie('Q_ut', timestamp);
 				}
 				if (earliest = result['@earliest']) {
-					root.localStorage.setItem(Q.updateUrls.earliestKey, timestamp);
+					root.localStorage.setItem(Q.updateUrls.earliestKey, earliest);
 				}
 				Q.handle(callback, null, [result, timestamp]);
 			}
@@ -9241,8 +9233,8 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 		}
 		var cb;
 		Q.addStylesheet.loaded[href2] = false;
-		if (Q.addScript.onErrorCallbacks[href2]) {
-			while ((cb = Q.addScript.onErrorCallbacks[href2].shift())) {
+		if (Q.addStylesheet.onErrorCallbacks[href2]) {
+			while ((cb = Q.addStylesheet.onErrorCallbacks[href2].shift())) {
 				cb.call(this);
 			}
 		}
