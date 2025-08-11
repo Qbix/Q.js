@@ -12482,37 +12482,6 @@ Q.Visual = Q.Pointer = {
 		};
 	},
 	/**
-	 * Like click event but fires much sooner on touchscreens,
-	 * and respects Q.Pointer.canceledClick
-	 * @static
-	 * @method fastclick
-	 * @param {Object} [params={}] if passed, it is filled with "eventName"
-	 */
-	fastclick: function _Q_fastclick (params) {
-		params.eventName =  Q.Pointer.end.eventName;
-		return function _Q_fastclick_on_wrapper (e) {
-			var oe = e.originalEvent || e;
-			if (oe.type === 'touchend') {
-				if (oe.touches && oe.touches.length) {
-					return; // still some touches happening
-				}
-				Q.Pointer.touches = oe.touches || [];
-			}
-			// var x = Q.Pointer.getX(e), y = Q.Pointer.getY(e);
-			var elem = e.target; // (!isNaN(x) && !isNaN(y)) && Q.Pointer.elementFromPoint(x, y);
-			if (!(elem instanceof Element)
-			|| !Q.Pointer.started) {
-				return; // the click may have been caused e.g. by Chrome on a button during form submit
-			}
-			if (Q.Pointer.canceledClick
-			|| !this.contains(Q.Pointer.started || null)
-			|| !this.contains(elem)) {
-				return Q.Pointer.preventDefault(e);
-			}
-			return params.original.apply(this, arguments);
-		};
-	},
-	/**
 	 * Like click event but works on touchscreens even if the viewport moves 
 	 * during click, such as when the on-screen keyboard disappears
 	 * or a scrolling parent gets scrollTop = 0 because content changed.
@@ -12546,42 +12515,6 @@ Q.Visual = Q.Pointer = {
 			}
 			Q.addEventListener(root, 'click', _clickHandler);
 			Q.addEventListener(this, 'touchend', _touchendHandler);
-		};
-	},
-	/**
-	 * Normalized mouse wheel event that works with various browsers
-	 * @static
-	 * @method click
-	 * @param {Object} [params={}] if passed, it is filled with "eventName"
-	 */
-	wheel: function _Q_wheel (params) {
-		// Modern browsers support "wheel",
-		// Webkit and IE support at least "mousewheel",
-		// and let's assume that remaining browsers are older Firefox
-		_Q_wheel.div = document.createElement("div");
-		params.eventName = ("onwheel" in _Q_wheel.div) ? "wheel" :
-			(document.onmousewheel !== undefined) ? "mousewheel" : 
-			"DOMMouseScroll MozMousePixelScroll";
-		return function _Q_wheel_on_wrapper (e) {
-			var oe = e.originalEvent || e;
-			e.type = 'wheel';
-			e.deltaMode = (oe.type == "MozMousePixelScroll") ? 0 : 1;
-			e.deltaX = oe.deltaX || 0;
-			e.deltaY = oe.deltaY || 0;
-			e.deltaZ = oe.deltaZ || 0;
-			
-			// calculate deltaY (and deltaX) according to the event
-			switch (params.eventName) {
-			case 'mousewheel':
-				// Webkit also supports wheelDeltaX
-				oe.wheelDelta && ( e.deltaY = -Math.ceil(1/3 * oe.wheelDelta) );
-				oe.wheelDeltaX && ( e.deltaX = -Math.ceil(1/3 * oe.wheelDeltaX) );
-				break;
-			case 'wheel':
-			default:
-				e.deltaY = ('deltaY' in oe) ? oe.deltaY : oe.detail;
-			}
-			return params.original.apply(this, arguments);
 		};
 	},
 	/**
@@ -12661,60 +12594,6 @@ Q.Visual = Q.Pointer = {
 	 */
 	windowHeight: function () {
 		return root.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
-	},
-	/**
-	 * Get the rectangle enclosing all the children of the container element
-	 * and – for their children with overflow: visible – their overflowed contents.
-	 * @static
-	 * @method boundingRect
-	 * @param {HTMLElement} [container=document.body] The container element
-	 * @param {Array} [omitClasses] Put CSS classes of any elements to omit from calculations
-	 * @param {boolean} [omitOverflow=false] If true, doesn't use overflowed content in calculations
-	 * @return {Object} with properties left, right, top, bottom, width, height
-	 */
-	boundingRect: function (container, omitClasses, omitOverflow) {
-		var rect = {left: 0, top: 0};
-		rect.right = Q.Visual.windowWidth();
-		rect.bottom = Q.Visual.windowHeight();
-		container = container || document.body;
-		var sl = Q.Visual.scrollLeft();
-		var st = Q.Visual.scrollTop();
-		Q.each(container.children || container.childNodes, function () {
-			if (this.hasClass && omitClasses) {
-				for (var i=0, l=omitClasses.length; i<l; ++i) {
-					if (this.hasClass(omitClasses[i])) return;
-				}
-			}
-			var bcr = this.getBoundingClientRect();
-			var r = {
-				left: bcr.left,
-				top: bcr.top,
-				right: bcr.right,
-				bottom: bcr.bottom
-			};
-			if (!r) return;
-			r.left += sl; r.right += sl;
-			r.top += st; r.bottom += st;
-			var cs = this.computedStyle();
-			if (!omitOverflow && cs.overflow === 'visible') {
-				if (this.scrollWidth > r.right - r.left) {
-					r.right += this.scrollWidth - (r.right - r.left);
-					r.left -= this.scrollLeft;
-				}
-				if (this.scrollHeight > r.bottom - r.top) {
-					r.bottom += this.scrollHeight - (r.bottom - r.top);
-					r.top -= this.scrollTop;
-				}
-			}
-			if (r.right - r.left == 0 || r.bottom - r.top == 0) return;
-			rect.left = Math.min(rect.left, r.left);
-			rect.top = Math.min(rect.top, r.top);
-			rect.right = Math.max(rect.right, r.right);
-			rect.bottom = Math.max(rect.bottom, r.bottom);
-		});
-		rect.width = rect.right - rect.left;
-		rect.height = rect.bottom - rect.top;
-		return rect;
 	},
 	/**
 	 * Call this function to find out whether a click on a link
@@ -14138,9 +14017,6 @@ Q.Masks = {
 				'top': rect.top,
 				'bottom': rect.bottom
 			};
-			if (!mask.shouldCover) {
-				//mask.rect = Q.Visual.boundingRect(document.body, ['Q_mask']);
-			}
 			if (mask.rect.top < 0) {
 				mask.rect.top = 0;
 			}

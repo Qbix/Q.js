@@ -10185,23 +10185,6 @@ function _Q_Pointer_start_end_handler (e) {
 Q.Visual = Q.Pointer = {
 
 	/**
-	 * Cross-browser way to call requestFullscreen on the element
-	 * @static
-	 * @param {Element} element 
-	 */
-	requestFullscreen: function (element) {
-		var oFsc = {navigationUI: 'hide'};
-		if (element.requestFullScreen) {
-			element.requestFullscreen(oFsc);
-		} else if (element.mozRequestFullScreen) {
-			element.mozRequestFullScreen(oFsc);
-		} else if (element.webkitRequestFullScreen) {
-			element.webkitRequestFullScreen(oFsc);
-		}
-		return true;
-	},
-
-	/**
 	 * Computes the intersection of two rectangles, if any.
 	 * Note that edge intersection may have 0 width or height.
 	 * @method intersection
@@ -10343,37 +10326,6 @@ Q.Visual = Q.Pointer = {
 		};
 	},
 	/**
-	 * Like click event but fires much sooner on touchscreens,
-	 * and respects Q.Pointer.canceledClick
-	 * @static
-	 * @method fastclick
-	 * @param {Object} [params={}] if passed, it is filled with "eventName"
-	 */
-	fastclick: function _Q_fastclick (params) {
-		params.eventName =  Q.Pointer.end.eventName;
-		return function _Q_fastclick_on_wrapper (e) {
-			var oe = e.originalEvent || e;
-			if (oe.type === 'touchend') {
-				if (oe.touches && oe.touches.length) {
-					return; // still some touches happening
-				}
-				Q.Pointer.touches = oe.touches || [];
-			}
-			// var x = Q.Pointer.getX(e), y = Q.Pointer.getY(e);
-			var elem = e.target; // (!isNaN(x) && !isNaN(y)) && Q.Pointer.elementFromPoint(x, y);
-			if (!(elem instanceof Element)
-			|| !Q.Pointer.started) {
-				return; // the click may have been caused e.g. by Chrome on a button during form submit
-			}
-			if (Q.Pointer.canceledClick
-			|| !this.contains(Q.Pointer.started || null)
-			|| !this.contains(elem)) {
-				return Q.Pointer.preventDefault(e);
-			}
-			return params.original.apply(this, arguments);
-		};
-	},
-	/**
 	 * Like click event but works on touchscreens even if the viewport moves 
 	 * during click, such as when the on-screen keyboard disappears
 	 * or a scrolling parent gets scrollTop = 0 because content changed.
@@ -10407,42 +10359,6 @@ Q.Visual = Q.Pointer = {
 			}
 			Q.addEventListener(root, 'click', _clickHandler);
 			Q.addEventListener(this, 'touchend', _touchendHandler);
-		};
-	},
-	/**
-	 * Normalized mouse wheel event that works with various browsers
-	 * @static
-	 * @method click
-	 * @param {Object} [params={}] if passed, it is filled with "eventName"
-	 */
-	wheel: function _Q_wheel (params) {
-		// Modern browsers support "wheel",
-		// Webkit and IE support at least "mousewheel",
-		// and let's assume that remaining browsers are older Firefox
-		_Q_wheel.div = document.createElement("div");
-		params.eventName = ("onwheel" in _Q_wheel.div) ? "wheel" :
-			(document.onmousewheel !== undefined) ? "mousewheel" : 
-			"DOMMouseScroll MozMousePixelScroll";
-		return function _Q_wheel_on_wrapper (e) {
-			var oe = e.originalEvent || e;
-			e.type = 'wheel';
-			e.deltaMode = (oe.type == "MozMousePixelScroll") ? 0 : 1;
-			e.deltaX = oe.deltaX || 0;
-			e.deltaY = oe.deltaY || 0;
-			e.deltaZ = oe.deltaZ || 0;
-			
-			// calculate deltaY (and deltaX) according to the event
-			switch (params.eventName) {
-			case 'mousewheel':
-				// Webkit also supports wheelDeltaX
-				oe.wheelDelta && ( e.deltaY = -Math.ceil(1/3 * oe.wheelDelta) );
-				oe.wheelDeltaX && ( e.deltaX = -Math.ceil(1/3 * oe.wheelDeltaX) );
-				break;
-			case 'wheel':
-			default:
-				e.deltaY = ('deltaY' in oe) ? oe.deltaY : oe.detail;
-			}
-			return params.original.apply(this, arguments);
 		};
 	},
 	/**
