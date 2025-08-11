@@ -5210,571 +5210,66 @@ Q.Response.processScripts = function Q_Response_processScripts(response, callbac
 	return newScripts;
 };
 
-/**
- * A Q.Cache object stores items in a cache and throws out least-recently-used ones.
- * You can use functions Q.Cache.document, Q.Cache.local and Q.Cache.session
- * to create new caches, but please cache a limited maximum number of limited-size items,
- * since the local and session storage can only handle up to 5MB on some browsers!
- * @class Q.Cache
- * @constructor
- * @param {Object} options you can pass the following options:
- * @param {boolean} [options.localStorage] use local storage instead of page storage
- * @param {boolean} [options.sessionStorage] use session storage instead of page storage
- * @param {String} [options.name] the name of the cache, not really used for now
- * @param {Integer} [options.max=100] the maximum number of items the cache should hold. Defaults to 100
- * @param {Q.Cache} [options.after] pass an existing cache with max > this cache's max, to look in first
- * @param {Q.Event} [options.beforeEvict] you can pass a handler here that returns false to prevent cache eviction of certain elements
- */
-Q.Cache = function _Q_Cache(options) {
-	if (this === Q) {
-		throw new Q.Error("Q.Pipe: omitted keyword new");
-	}
-	options = options || {};
-	this.typename = 'Q.Cache';
-	this.localStorage = !!options.localStorage;
-	this.sessionStorage = !!options.sessionStorage;
-	this.name = options.name;
-	this.data = {};
-	this.special = {};
-	this.beforeEvict = new Q.Event();
-	if (options.beforeEvict) {
-		Q.extend(this.beforeEvict, options.beforeEvict);
-	}
-	var _earliest, _latest, _count;
-	if (options.localStorage) {
-		this.localStorage = true;
-	} else if (options.sessionStorage) {
-		this.sessionStorage = true;
-	} else {
-		this.documentStorage = true;
-		_earliest = _latest = null;
-		_count = 0;
-	}
-	this.max = options.max || 100;
-	/**
-	 * Returns the key corresponding to the entry that was touched the earliest
-     * @method earliest
-	 * @return {String}
-	 */
-	this.earliest = function _Q_Cache_earliest() {
-		var newValue = arguments[0]; // for internal use
-		if (newValue === undefined) {
-			if (this.documentStorage) {
-				return _earliest;
-			} else {
-				var result = Q_Cache_get(this, "earliest", true);
-				return result === undefined ? null : result;
-			}
-		} else {
-			if (this.documentStorage) {
-				_earliest = newValue;
-			} else {
-				Q_Cache_set(this, "earliest", newValue, true);
-			}
-		}
-	};
-	/**
-	 * Returns the key corresponding to the entry that was touched the latest
-     * @method latest
-	 * @return {String}
-	 */
-	this.latest = function _Q_Cache_latest() {
-		var newValue = arguments[0]; // for internal use
-		if (newValue === undefined) {
-			if (this.documentStorage) {
-				return _latest;
-			} else {
-				var result = Q_Cache_get(this, "latest", true);
-				return result === undefined ? null : result;
-			}
-		} else {
-			if (this.documentStorage) {
-				_latest = newValue;
-			} else {
-				Q_Cache_set(this, "latest", newValue, true);
-			}
-		}
-	};
-	/**
-	 * Returns the number of entries in the cache
-     * @method count
-	 * @return {number}
-	 */
-	this.count = function _Q_Cache_count() {
-		var newValue = arguments[0]; // for internal use
-		if (newValue === undefined) {
-			if (this.documentStorage) {
-				return _count;
-			} else {
-				var result = Q_Cache_get(this, "count", true);
-				return result || 0;
-			}
-		} else {
-			if (this.documentStorage) {
-				_count = newValue;
-			} else {
-				Q_Cache_set(this, "count", newValue, true);
-			}
-		}
-	};
-	if (options.after) {
-		var cache = options.after;
-		if (!(cache instanceof Q.Cache)) {
-			throw new Q.Exception("Q.Cache after option must be a Q.Cache instance");
-		}
-		if (cache.max < this.max) {
-			throw new Q.Exception("Q.Cache after.max cannot be less than this.max");
-		}
-		var _set = this.set;
-		var _get = this.get;
-		var _remove = this.remove;
-		var _clear = this.clear;
-		this.set = function () {
-			cache.set.apply(this, arguments);
-			return _set.apply(this, arguments);
-		};
-		this.get = function () {
-			cache.get.apply(this, arguments);
-			return _get.apply(this, arguments);
-		};
-		this.remove = function () {
-			cache.remove.call(this, arguments);
-			return _remove.apply(this, arguments);
-		};
-		this.clear = function () {
-			this.each([], function () {
-				cache.remove.apply(this, arguments);
-			});
-			return _clear.apply(this, arguments);
-		};
-	}
-};
-function Q_Cache_index_name(parameterCount) {
-	return 'index' + parameterCount + 'parameters';
-}
-function Q_Cache_get(cache, key, special) {
-	if (cache.documentStorage) {
-		return (special === true) ? cache.special[key] : cache.data[key];
-	}
-	var storage = cache.localStorage ? root.localStorage : (cache.sessionStorage ? root.sessionStorage : null);
-	var item = storage.getItem(cache.name + (special===true ? "\t" : "\t\t") + key);
-	return item ? JSON.parse(item) : undefined;
-}
-function Q_Cache_set(cache, key, obj, special) {
-	if (cache.documentStorage) {
-		if (special === true) {
-			cache.special[key] = obj;
-		} else {
-			cache.data[key] = obj;
-		}
-	} else {
-		if (cache.localStorage && Q.Frames && !Q.Frames.isMain()) {
-			return false; // do nothing, this isn't the main frame
-		}
-		var storage = cache.localStorage ? root.localStorage : (cache.sessionStorage ? root.sessionStorage : null);
-		var id = cache.name + (special===true ? "\t" : "\t\t") + key;
-		try {
-			var serialized = JSON.stringify(obj);
-			storage.setItem(id, serialized);
-		} catch (e) {
-			if (!special && e.name !== 'TypeError') {
-				for (var i=0; i<10; ++i) {
-					try {
-						// try to remove up to 10 items it may be a problem with space
-						if (cache.removeEarliest()) {
-							storage.setItem(id, serialized);
-						}
-						break;
-					} catch (e) {
-		
-					}
-				}
-			}
-		}
-		
-	}
-}
-function Q_Cache_removeFromIndex(cache, parameters, key) {
-	if (!parameters) {
-		return false;
-	}
-	// remove from index for Cp.each
-	for (var i=1, l=parameters.length; i<l; ++i) {
-		// key in the index
-		var k = 'index:' + Q.Cache.key(parameters.slice(0, i));
-		var obj = Q_Cache_get(cache, k, true) || {};
-		if (key in obj) {
-			delete obj[key];
-			Q_Cache_set(cache, k, obj, true);
-		}
-	}
-	return true;
-}
-function Q_Cache_remove(cache, key, special) {
-	if (cache.documentStorage) {
-		if (special === true) {
-			delete cache.special[key];
-		} else {
-			delete cache.data[key];
-		}
-	} else {
-		if (cache.localStorage && Q.Frames && !Q.Frames.isMain()) {
-			return false; // do nothing, this isn't the main frame
-		}
-		var storage = cache.localStorage ? root.localStorage : (cache.sessionStorage ? root.sessionStorage : null);
-		storage.removeItem(cache.name + (special === true ? "\t" : "\t\t") + key);
-	}
-}
-function Q_Cache_pluck(cache, existing) {
-	var value;
-	if (existing.prev) {
-		if (value = Q_Cache_get(cache, existing.prev)) {
-			value.next = existing.next;
-			Q_Cache_set(cache, existing.prev, value);
-		}
-	} else {
-		cache.earliest(existing.next);
-	}
-	if (existing.next) {
-		if (value = Q_Cache_get(cache, existing.next)) {
-			value.prev = existing.prev;
-			Q_Cache_set(cache, existing.next, value);
-		}
-	} else {
-		cache.latest(existing.prev);
-	}
-}
-/**
- * Generates the key under which things will be stored in a cache
- * @static
- * @method key
- * @param  {Array|String} args the arguments from which to generate the key
- * @param {Array} functions  optional array to which all the functions found in the arguments will be pushed
- * @return {String}
- */
-Q.Cache.key = function _Cache_key(args, functions) {
-	var i, keys = [];
-	if (!Q.isArrayLike(args)) {
-		return args;
-	}
+// Minimal Q.Cache implementation (much more limited than in Q.js)
+Q.Cache = Q.Cache || {};
 
-	for (i=0; i<args.length; ++i) {
-		if (typeof(args[i]) === 'function') {
-			if (functions && functions.push) {
-				functions.push(args[i]);
-			}
-		} else if (typeof args[i] !== 'object' || Q.isPlainObject(args[i]) || args[i] instanceof Array) {
-			keys.push(args[i]);
-		}
-	}
-	return JSON.stringify(keys);
+Q.Cache.Memory = function (name, maxItems) {
+	this._name = name || 'mem';
+	this._max = (typeof maxItems === 'number' && maxItems >= 1) ? maxItems : 100;
+	this._map = {};   // key -> { subject, params:Array, cbpos:Number, ts:Number }
+	this._keys = [];  // list of keys for random eviction
+};
+Q.Cache.Memory.prototype.get = function (args) {
+	var key = Q.Cache.key(args);
+	return this._map.hasOwnProperty(key) ? this._map[key] : null;
 };
 
-var Cp = Q.Cache.prototype;
-
-/**
- * Accesses the cache and sets an entry in it
- * @method set
- * @param {String|Array} key  the key to save the entry under, or an array of arguments
- * @param {number} cbpos the position of the callback
- * @param {Object} subject The "this" object for the callback
- * @param {Array} params The parameters for the callback
- * @param {Object} options  supports the following options:
- * @param {boolean} [options.dontTouch=false] if true, then doesn't mark item as most recently used
- * @return {boolean} whether there was an existing entry under that key
- */
-Cp.set = function _Q_Cache_prototype_set(key, cbpos, subject, params, options) {
-	var existing, previous, count;
-	var parameters = (typeof key !== 'string' ? key : null);
-	if (parameters) {
-		key = Q.Cache.key(parameters);
-	}
-	if (!options || !options.dontTouch) {
-		// marks the item as being recently used, if it existed in the cache already
-		existing = this.get(key);
-		if (!existing) {
-			count = this.count() + 1;
-			this.count(count);
+Q.Cache.Memory.prototype.set = function (args, cbpos, subject, params) {
+	var key = Q.Cache.key(args);
+	if (!this._map.hasOwnProperty(key)) {
+		this._keys.push(key);
+		if (this._keys.length > this._max) {
+			var idx = Math.floor(Math.random() * this._keys.length);
+			var evictKey = this._keys[idx];
+			this._keys.splice(idx, 1);
+			delete this._map[evictKey];
 		}
 	}
-	var value = {
-		cbpos: cbpos,
+	this._map[key] = {
 		subject: subject,
-		params: (params instanceof Array) ? params : Array.prototype.slice.call(params||[]),
-		prev: (options && options.prev) ? options.prev : (existing ? existing.prev : this.latest()),
-		next: (options && options.next) ? options.next : (existing ? existing.next : null)
+		params: Array.prototype.slice.call(params),
+		cbpos: cbpos,
+		ts: Date.now()
 	};
-	Q_Cache_set(this, key, value);
-	if (!existing || (!options || !options.dontTouch)) {
-		if ((previous = Q_Cache_get(this, value.prev))) {
-			previous.next = key;
-			Q_Cache_set(this, value.prev, previous);
-		}
-		this.latest(key);
-		if (count === 1) {
-			this.earliest(key);
-		}
-	}
-
-	if (count > this.max) {
-		this.removeEarliest();
-	}
-
-	if (parameters) {
-		for (var i=1, l=parameters.length; i<=l; ++i) {
-			// add to index for Cp.each
-			Q_Cache_set(this, Q_Cache_index_name(i), true, true);
-
-			if (i===l) {
-				break;
-			}
-
-			// key in the index
-			var k = 'index:' + Q.Cache.key(parameters.slice(0, i));
-			var obj = Q_Cache_get(this, k, true) || {};
-			obj[key] = 1;
-			Q_Cache_set(this, k, obj, true);
-		}
-	}
-
-	return !!existing;
-};
-/**
- * Accesses the cache and gets an entry from it
- * @method get
- * @param {String|Array} key  the key to search for
- * @param {Object} options  supports the following options:
- * @param {boolean} [options.dontTouch=false] if true, then doesn't mark item as most recently used
- * @return {mixed} whatever is stored there, or else returns undefined
- */
-Cp.get = function _Q_Cache_prototype_get(key, options) {
-	var existing, previous;
-	if (typeof key !== 'string') {
-		key = Q.Cache.key(key);
-	}
-	existing = Q_Cache_get(this, key);
-	if (!existing) {
-		return undefined;
-	}
-	if ((!options || !options.dontTouch) && this.latest() !== key) {
-		if (this.earliest() == key) {
-			this.earliest(existing.next);
-		}
-		Q_Cache_pluck(this, existing);
-		existing.prev = this.latest();
-		existing.next = null;
-		Q_Cache_set(this, key, existing);
-		if ((previous = Q_Cache_get(this, existing.prev))) {
-			previous.next = key;
-			Q_Cache_set(this, existing.prev, previous);
-		}
-		this.latest(key);
-	}
-	return existing;
-};
-/**
- * Accesses the cache and removes an entry from it.
- * @static
- * @method remove
- * @param {String|Array} key  the key of the entry to remove
- * @return {boolean} whether there was an existing entry under that key
- */
-Cp.remove = function _Q_Cache_prototype_remove(key) {
-	var existing, count;
-	var parameters = (typeof key !== 'string' ? key : null);
-	if (parameters) {
-		key = Q.Cache.key(key);
-	}
-	existing = this.get(key, {dontTouch: true});
-	if (!existing) {
-		return false;
-	}
-
-	count = this.count()-1;
-	this.count(count);
-
-	if (this.latest() === key) {
-		this.latest(existing.prev);
-	}
-	if (this.earliest() === key) {
-		this.earliest(existing.next);
-	}
-
-	Q_Cache_pluck(this, existing);
-	Q_Cache_remove(this, key);
-	Q_Cache_removeFromIndex(this, parameters, key);
-
 	return true;
 };
-/**
- * Accesses the cache and removes the earliest entry from it that it can
- * @static
- * @method removeEarliest
- * @return {Object|null} the item that was removed, otherwise null
- */
-Cp.removeEarliest = function _Q_Cache_prototype_removeEarliest () {
-	var current, currentKey = this.earliest();
-	while (current = Q_Cache_get(this, currentKey)) {
-		if (false !== Q.handle(this.beforeEvict, this, [current])) {
-			this.remove(currentKey);
-			return current;
-		}
-		currentKey = current.next;
+
+Q.Cache.Memory.prototype.remove = function (args) {
+	var key = Q.Cache.key(args);
+	if (this._map.hasOwnProperty(key)) {
+		delete this._map[key];
+		var i = this._keys.indexOf(key);
+		if (i !== -1) this._keys.splice(i, 1);
+		return true;
+	}
+	return false;
+};
+
+Q.Cache.Memory.prototype.each = function (argsList, fn) {
+	for (var i = 0; i < argsList.length; i++) {
+		fn.call(this, argsList[i]);
 	}
 };
-/**
- * Accesses the cache and clears all entries from it
- * @static
- * @method clear
- */
-Cp.clear = function _Q_Cache_prototype_clear() {
-	if (this.documentStorage) {
-		this.special = {};
-		this.data = {};
-	} else {
-		var key = this.earliest(), prevkey, item;
-		// delete the cached items one by one
-		while (key) {
-			item = Q_Cache_get(this, key);
-			if (item === undefined) break;
-			prevkey = key;
-			key = item.next;
-			Q_Cache_remove(this, prevkey);
-			try {
-				Q_Cache_removeFromIndex(this, JSON.parse(key), key);
-			} catch (e) {}
-		}
-	}
-	this.earliest(null);
-	this.latest(null);
-	this.count(0);
+
+Q.Cache.Memory.prototype.clear = function () {
+	this._map = {};
+	this._keys = [];
 };
-/**
- * Searches for entries matching a certain prefix of arguments array
- * and calls the callback repeatedly with each matching result.
- * @method each
- * @param {Array} args  An array consisting of some or all the arguments that form the key
- * @param {Function} callback  Is passed two parameters: key, value, with this = the cache
- * @param {Object} [options]
- * @param {Boolean} [options.throwIfNoIndex] pass true to throw an exception if an index doesn't exist
- */
-Cp.each = function _Q_Cache_prototype_each(args, callback, options) {
-	if (!callback) {
-		return;
-	}
-	options = options || {};
-	var localStorageIndexInfoKey = Q_Cache_index_name(args.length);
-	if (Q_Cache_get(this, localStorageIndexInfoKey, true)) {
-		var rawKey = Q.Cache.key(args);
-		var key = 'index:' + rawKey; // key in the index
-		var localStorageKeys = Q_Cache_get(this, key, true) || {};
-		for (var k in localStorageKeys) {
-			var result = Q_Cache_get(this, k);
-			if (result === undefined) {
-				continue;
-			}
-			if (false === callback.call(this, k, result)) {
-				continue;
-			}
-		}
-		// also the key itself
-		if (!(rawKey in localStorageKeys)) {
-			var item = Q_Cache_get(this, rawKey);
-			if (item !== undefined) {
-				callback.call(this, rawKey, item);
-			}
-		}
-		return;
-	}
-	// key doesn't exist
-	if (options.throwIfNoIndex) {
-		throw new Q.Exception('Cache.prototype.each: no index for ' + this.name + ' ' + localStorageIndexInfoKey);
-	}
-	var prefix = null;
-	if (typeof args === 'function') {
-		callback = args;
-		args = undefined;
-	} else {
-		var json = Q.Cache.key(args);
-		prefix = json.substring(0, json.length-1);
-	}
-	var cache = this;
-	if (this.documentStorage) {
-		return Q.each(this.data, function (k, v) {
-			if (prefix && !k.startsWith(prefix)) {
-				return;
-			}
-			if (callback.call(cache, k, v) === false) {
-				return false;
-			}
-		});
-	} else {
-		var results = {}, seen = {}, key = cache.earliest(), item;
-		while (key) {
-			item = Q_Cache_get(this, key);
-			if (item === undefined) {
-				break;
-			}
-			if (!prefix || key.startsWith(prefix)) {
-				results[key] = item;
-			}
-			if (seen[key]) {
-				throw new Q.Error("Q.Cache.prototype.each: "+this.name+" has an infinite loop");
-			}
-			seen[key] = true;
-			key = item.next;
-		}
-		for (key in results) {
-			if (false === callback.call(this, key, results[key])) {
-				break;
-			}
-		}
-	}
+
+Q.Cache.document = function (name, maxItems) {
+	return new Q.Cache.Memory(name, maxItems);
 };
-/**
- * Removes all the entries in the cache matching the args
- * @method removeEach
- * @param {Array} args  An array consisting of some or all the arguments that form the key
- */
-Cp.removeEach = function _Q_Cache_prototype_each(args, options) {
-	options = options || { throwIfNoIndex: false };
-	this.each(args, function (key) {
-		this.remove(JSON.parse(key));
-	}, options);
-	return this;
-};
-Q.Cache.document = function _Q_Cache_document(name, max, options) {
-	if (!Q.Cache.document.caches[name]) {
-		Q.Cache.document.caches[name] = new Q.Cache(Q.extend({
-			max: max,
-			name: name
-		}, options));
-	}
-	return Q.Cache.document.caches[name];
-};
-Q.Cache.local = function _Q_Cache_local(name, max, options) {
-	if (!Q.Cache.local.caches[name]) {
-		var cache = Q.Cache.local.caches[name] = new Q.Cache(Q.extend({
-			localStorage: true,
-			max: max,
-			name: name
-		}, options));
-	}
-	return Q.Cache.local.caches[name];
-};
-Q.Cache.session = function _Q_Cache_session(name, max, options) {
-	if (!Q.Cache.session.caches[name]) {
-		var cache = Q.Cache.session.caches[name] = new Q.Cache(Q.extend({
-			sessionStorage: true,
-			max: max,
-			name: name
-		}, options));
-	}
-	return Q.Cache.session.caches[name];
-};
-Q.Cache.document.caches = {};
-Q.Cache.local.caches = {};
-Q.Cache.session.caches = {};
+
 
 /**
  * A constructor to create Q.Page objects
