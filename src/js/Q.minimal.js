@@ -7899,9 +7899,7 @@ Q.activate = function _Q_activate(elem, options, callback, internal) {
 	function _activated() {
 		var tool = shared.firstTool || shared.tool;
 		shared.internal && shared.internal.progress && shared.internal.progress(shared);
-		if (!Q.isEmpty(shared.tools) && !tool) {
-			throw new Q.Error("Q.activate: tool " + shared.firstToolId + " not found.");
-		}
+		// tool may be undefined, if Q.activate() is called synchronously inside tool constructor
 		if (callback) {
 			Q.handle(callback, tool, [elem, shared.tools, options]);
 		}
