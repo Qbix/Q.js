@@ -1,0 +1,11 @@
+{
+  "name": "@qbixplatform/q.js",
+  "version": "1.0.11",
+  "description": "Q.js – the Qbix JavaScript framework",
+  "main": "dist/Q.min.js",
+  "files": [
+    "dist/"
+  ],
+  "author": "Qbix Inc.",
+  "license": "MIT"
+}
