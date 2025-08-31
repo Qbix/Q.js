@@ -93,6 +93,132 @@ Here is an overview of the main ones:
 
 # Overview
 
+## Main functionality
+
+```
+// Core
+Q
+  .init(options)
+  .activate(element, options)
+  .replace(element, source)
+  .extend(target, ...sources)
+  .copy(object, fields, levels)
+  .exports(fn)
+  .require(src, callback)
+  .import(src)
+  .handle(eventOrURL, context, args)
+
+// Events
+Q.Event
+  .add(handler, key)
+  .set(handler, key)
+  .remove(key)
+  .removeAllHandlers()
+  .factory(name)
+  .and(otherEvent)
+  .or(otherEvent)
+  .until(otherEvent)
+  .then()
+  .filter(testFn)
+  .map(transformFn)
+  .debounce(ms)
+  .throttle(ms)
+  .queue(ms)
+
+// Tools
+Q.Tool
+  .define(name, constructor, defaults, methods)
+  .prepare(elementOrTag, toolName, options)
+  .remove(element)
+  .clear(container)
+  .onActivate(toolName)
+
+// Pages
+Q.Page
+  .onLoad(urlOrName)
+  .onUnload(urlOrName)
+  .push(url, options)
+  .pop()
+  .currentUrl
+
+// Templates
+Q.Template
+  .set(name, template, options)
+  .remove(name)
+  .compile(source, type, options)
+  .render(name, fields, callback, options)
+  .load(name, callback, options)
+
+// Text / i18n
+Q.Text
+  .setLanguage(lang, locale)
+  .set(name, data, options)
+  .get(name, callback, options)
+  .addFor(events, prefix, names)
+  .addedFor(event, name, options)
+
+// Methods
+Q.Method
+  .define(methods, namespace, closureFn)
+  .options
+
+// Visual
+Q.Visual
+  .intersection(a, b)
+  .scrollLeft()
+  .scrollTop()
+  .windowWidth()
+  .windowHeight()
+  .boundingRect(element, classFilter, includeHidden)
+  .getX(event, index)
+  .getY(event, index)
+  .shouldOpenInNewWindow(event)
+
+// Animation
+Q.Animation
+  .play(fn, options)
+  .pause()
+  .jump(timeOrFrame)
+  .rewind()
+  .nextFrame()
+
+// Audio
+Q.Audio
+  .play(src, options)
+  .pause(id)
+  .stop(id)
+  .speak(text, options)
+
+// IndexedDB
+Q.IndexedDB
+  .open(name, version, upgradeCallback)
+  .get(store, key)
+  .set(store, value)
+  .remove(store, key)
+  .clear(store)
+
+// Service Workers
+Q.ServiceWorker
+  .register(script, options)
+  .unregister(scope)
+  .message(handler)
+
+// Requests
+Q.request(url, slotName, callback, options)
+Q.loadUrl(url, options)
+Q.addScript(src, callback, options)
+Q.addStylesheet(href, options)
+Q.removeStylesheet(href)
+Q.cookie(name, value, options)
+
+// Flow
+Q.chain(tasks, callback)
+Q.getter(original, options)
+Q.batcher(batchFn, options)
+Q.promisify(fn, useThis, callbackIndex)
+Q.debounce(fn, ms)
+```
+
 ## 📝 Templates
 
 You can dynamically create elements in a React-like way, such as this:
