@@ -129,17 +129,18 @@ Q.Tool.define("Namespace/another", function (options) {
   refresh: function () {
     this.state; // copy of options
     this.element; // the element it was activated on
-    this.renderTemplate('Namespace/another/view', this.state, {
-        some: options,
-        'Namespace_cool_name_tool': {
-            some: childToolOptions
-        }
-    }).then(function (html, elements, tools) {
+    this.renderTemplate('Namespace/another/view', this.state,
+      function (html, elements, tools) {
         // now this.x and this.y point to elements from
         // the template that was rendered, while
         this.element.forEachTool('Namespace/cool/name', function () {
             // run whenever a child tool activates
         });
+      }, {
+        some: options,
+        'Namespace_cool_name_tool': {
+            some: childToolOptions
+        }
     });
     // this is how we handle in-place updates if x or y changes:
     this.rendering([x, y], (changed, previous, timestamp) => {
