@@ -12,9 +12,7 @@ How to use: copy contents of `dist` into your project, and then include it like 
 
 This is part of the much larger full-stack [Qbix Platform](https://github.com/Qbix/Platform) that contains many pre-built reusable tools, plugins, and requires PHP and Node.js on the back-end. If you want to build an entire full-stack social network like Facebook you're well-advised to go with that. But if you just want to use the lightweight front-end core, with your own back-end and other frameworks, then start with this framework here.
 
-# 🌟 Advantages of Q.minimal.js
-
-# 🔟 Top 10 Things to Love About Q.js (vs. Other Frameworks)
+# 🌟 Advantages of Q.minimal.js vs other frameworks
 
 **1. No build step**  
 React/Vue/Angular need bundlers, transpilers, tree-shakers, and hydration layers. Q.js works with plain `.html` and `.js` — drop it in and it runs.  
