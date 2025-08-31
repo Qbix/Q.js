@@ -2582,6 +2582,12 @@ Q.onLayout.debounce = 100;
 Q.onScroll = new Q.Event();
 
 /**
+ * This event occurs before replacing the contents of an element
+ * @event beforeReplace
+ */
+Q.beforeReplace = new Q.Event();
+
+/**
  * Gets information about the currently running script.
  * Only works when called synchronously when the script loads.
  * Returns script src without "?querystring"
