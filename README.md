@@ -14,37 +14,39 @@ This is part of the much larger full-stack [Qbix Platform](https://github.com/Qb
 
 # 🌟 Advantages of Q.minimal.js
 
-1. No build step
-React/Vue/Angular need bundlers, transpilers, tree-shakers, and hydration layers. Q.js works with plain .html and .js — drop it in and it runs.
+# 🔟 Top 10 Things to Love About Q.js (vs. Other Frameworks)
 
-2. Tiny footprint (~40KB gzipped)
-Smaller than React (without ReactDOM), Vue runtime, and far smaller than Angular. Yet it packs components, events, routing, caching, batching, i18n, animations, IndexedDB, service workers, and more — all in core.
+**1. No build step**  
+React/Vue/Angular need bundlers, transpilers, tree-shakers, and hydration layers. Q.js works with plain `.html` and `.js` — drop it in and it runs.  
 
-3. Direct DOM updates (no Virtual DOM overhead)
-No diffing, no reconciler. Q.js uses requestAnimationFrame and .rendering() hooks for high-performance, granular updates.
+**2. Tiny footprint (~40KB gzipped)**  
+Smaller than React (without ReactDOM), Vue runtime, and far smaller than Angular. Yet it packs components, events, routing, caching, batching, i18n, animations, IndexedDB, service workers, and more — all in core.  
 
-4. Autoloading methods & tools
-Any method, template, or tool can be defined in its own file and is only loaded when first used. No code-splitting configs, no manual lazy-loading hacks — it’s automatic.
+**3. Direct DOM updates (no Virtual DOM overhead)**  
+No diffing, no reconciler. Q.js uses `requestAnimationFrame` and `.rendering()` hooks for high-performance, granular updates.  
 
-5. Tools = components + behaviors
-Like React components or Vue directives, but attachable as behaviors to any DOM element. Multiple tools can live on the same element, making composition more flexible than “one component per node.”
+**4. Autoloading methods & tools**  
+Any method, template, or tool can be defined in its own file and is only loaded when first used. No code-splitting configs, no manual lazy-loading hacks — it’s automatic.  
 
-6. Built-in batching & caching
-APIs like Q.getter() and Q.batcher() deduplicate, throttle, and combine calls automatically. If multiple parts of the UI request the same object, it’s fetched once and everyone gets the result.
+**5. Tools = components + behaviors**  
+Like React components or Vue directives, but attachable as *behaviors* to any DOM element. Multiple tools can live on the same element, making composition more flexible than “one component per node.”  
 
-7. Templates that Just Work™
-Use Handlebars, .html <template> files (Vue-style), or JS-defined templates. Designers can work in HTML, devs can work in JS — both paths integrate seamlessly.
+**6. Built-in batching & caching**  
+APIs like `Q.getter()` and `Q.batcher()` deduplicate, throttle, and combine calls automatically. If multiple parts of the UI request the same object, it’s fetched once and everyone gets the result.  
 
-8. First-class events & lifecycle
-Events are observable, chainable (a.and(b), a.or(b), a.until(b)), and auto-clean up when a tool or page unloads. No more memory leaks or dangling listeners.
+**7. Templates that Just Work™**  
+Use Handlebars, `.html <template>` files (Vue-style), or JS-defined templates. Designers can work in HTML, devs can work in JS — both paths integrate seamlessly.  
 
-9. Progressive enhancement & SEO-friendly
-Pages can render server-side HTML and Q.js simply activates tools as needed. No “blank page until hydration” problem — works with or without JS.
+**8. First-class events & lifecycle**  
+Events are observable, chainable (`a.and(b)`, `a.or(b)`, `a.until(b)`), and auto-clean up when a tool or page unloads. No more memory leaks or dangling listeners.  
 
-10. Unified, full-stack philosophy
-It’s not just a front-end library. Q.js is part of the larger Qbix platform, which powers real social apps (with accounts, feeds, groups, payments, etc.). You can start small with Q.minimal.js, and later plug into the full stack without rewriting.
+**9. Progressive enhancement & SEO-friendly**  
+Pages can render server-side HTML and Q.js simply activates tools as needed. No “blank page until hydration” problem — works with or without JS.  
 
-Q.js is smaller than jQuery, faster than React, easier than Vue, and more complete than Angular.
+**10. Unified, full-stack philosophy**  
+It’s not just a front-end library. Q.js is part of the larger Qbix platform, which powers real social apps (with accounts, feeds, groups, payments, etc.). You can start small with Q.minimal.js, and later plug into the full stack without rewriting.  
+
+Q.js is **smaller than jQuery, faster than React, easier than Vue, and more complete than Angular**.
 
 # 🔍 Features
 
