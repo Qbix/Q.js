@@ -9473,6 +9473,9 @@ Q.Text = {
 			if (!normalizedName.startsWith(namePrefix)) {
 				continue;
 			}
+			if (objectToExtend && objectToExtend.text === false) {
+				continue; // asked not to extend
+			}
 			var text = objectToExtend.text = objectToExtend.text || [];
 			Q.each(d[namePrefix], function (i, t) {
 				if (text.indexOf(t) < 0) {
