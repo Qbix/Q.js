@@ -1,5 +1,5 @@
 /**
- * You'll find all your mininmal Q related functionality right here.
+ * You'll find all your minimal Q related functionality right here.
  *
  * @module Q
  * @main Q
@@ -658,31 +658,34 @@ Q.typeOf = function _Q_typeOf(value) {
 		if (value === null) {
 			return 'null';
 		}
+		var t = Object.prototype.toString.apply(value);
 		if (value instanceof root.Element) {
 			return 'Element';
-		}
-		var ctorName = value.constructor && value.constructor.name;
-		if (Array.isArray(value) || ctorName === 'Array') {
-			return 'array';
-		}
-		if (ctorName && Q.typeOf.treatAsObject[ctorName]) {
-			return ctorName;
-		}
-		if (ctorName === 'Object') {
+		} else if (value instanceof Array
+		|| (value.constructor && value.constructor.name === 'Array')
+		|| t === '[object Array]') {
+			s = 'array';
+		} else if (t === '[object Window]') {
+			s = 'window';
+		} else if (typeof value.typename != 'undefined' ) {
+			return value.typename;
+		} else if (value.constructor && Q.typeOf.treatAsObject[value.constructor.name]) {
 			return 'object';
-		}
-		if (ctorName) {
-			return ctorName;
-		}
-		if (value[Symbol.iterator] === 'function'
+		} else if (value[Symbol.iterator] === 'function'
 		|| (typeof (l=value.length) == 'number' && (l%1==0)
 		&& (l > 0 && ((l-1) in value)))) {
 			return 'array';
-		}
-		if ((x = Object.prototype.toString.apply(value)).substring(0, 8) === "[object ") {
+		} else if (typeof value.constructor != 'undefined'
+		&& typeof value.constructor.name != 'undefined') {
+			if (value.constructor.name == 'Object') {
+				return 'object';
+			}
+			return value.constructor.name;
+		} else if ((x = Object.prototype.toString.apply(value)).substring(0, 8) === "[object ") {
 			return x.substring(8, x.length-1).toLowerCase();
+		} else {
+			return 'object';
 		}
-		return 'object';
 	}
 	return s;
 };
