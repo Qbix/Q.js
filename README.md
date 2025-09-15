@@ -622,6 +622,7 @@ In it, you will define the tools, methods, and other things. Here is an example:
     });
   });
 })(Q, jQuery);
+```
 
 # ⚖️ Comparison with React, Vue, Angular, Svelte
 
