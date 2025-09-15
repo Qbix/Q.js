@@ -170,7 +170,7 @@ Q.Audio
 Q.IndexedDB
   .open(name, version, upgradeCallback)
   .get(store, key)
-  .set(store, value)
+  .put(store, value)
   .remove(store, key)
   .clear(store)
 
