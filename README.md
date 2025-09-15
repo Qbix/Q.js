@@ -6,19 +6,19 @@ Size: ~40KB (Minified + GZipped), [compare to other frameworks](https://gist.git
 How to use: copy contents of `dist` into your project, and then include it like this:
 | File Type | Code to Use |
 |------------|-------------|
-|`.html` files| `<script type="module">import { Q } from './Q.js</script>`|
-|`.js` or `.ts` files|`import Q from './Q.js';`
+|`.html` files| `<script type="module">import { Q } from 'https://unpkg.com/@qbixplatform/q.js@1.0.16/dist/Q.js</script>`|
+|`.js` or `.ts` files|`import Q from 'https://unpkg.com/@qbixplatform/q.js@1.0.17/dist/Q.js';`
 |<img src="https://github.com/user-attachments/assets/ba3df93e-0cd8-4189-93fc-11947b63b684" alt="Description" width="100" height="87"> | Full documentation here: https://qbix.com/platform/guide/javascript |
 
 This is part of the much larger full-stack [Qbix Platform](https://github.com/Qbix/Platform) that contains many pre-built reusable tools, plugins, and requires PHP and Node.js on the back-end. If you want to build an entire full-stack social network like Facebook you're well-advised to go with that. But if you just want to use the lightweight front-end core, with your own back-end and other frameworks, then start with this framework here.
 
-# 🌟 Advantages of Q.minimal.js vs other frameworks
+# 🌟 Advantages of Q.js vs other frameworks
 
 **1. No build step**  
 React/Vue/Angular need bundlers, transpilers, tree-shakers, and hydration layers. Q.js works with plain `.html` and `.js` — drop it in and it runs.  
 
 **2. Tiny footprint (~40KB gzipped)**  
-Smaller than React (without ReactDOM), Vue runtime, and far smaller than Angular. Yet it packs components, events, routing, caching, batching, i18n, animations, IndexedDB, service workers, and more — all in core.  
+Q.minimal.js is smaller than React (even without ReactDOM), Vue runtime, and far smaller than Angular. Yet it packs components, events, routing, caching, batching, i18n, animations, IndexedDB, service workers, and more — all in core.  
 
 **3. Direct DOM updates (no Virtual DOM overhead)**  
 No diffing, no reconciler. Q.js uses `requestAnimationFrame` and `.rendering()` hooks for high-performance, granular updates.  
@@ -67,29 +67,6 @@ Here is an overview of the main ones:
 | Requests | `Q.request()`, `Q.handle()`, `Q.loadUrl()`, `Q.addScript()`, `Q.addStylesheet()` |
 | Flow | `Q.chain()`, `Q.getter()`, `Q.batcher()`, `Q.promisify()`, `Q.debounce()` |
 | Helpers | `Q.find()`, `Q.activate()`, `Q.cookie()`, `Q.handle()` |
-
-# ⚖️ Comparison with React, Vue, Angular, Svelte
-
-| Feature 🏆                | **Q.js** ⚡ (40KB) | **React** 🏗️ | **Vue** 🎨 | **Angular** 🏛️ | **Svelte** 🔥 |
-|---------------------------|------------------|--------------|------------|----------------|---------------|
-| **Bundle Size** 📦        | **~40KB gzipped (core + tools + events + routing)** | 42KB + ReactDOM (120KB) | ~60KB runtime | 140KB+ | ~50KB compiler/runtime |
-| **Build Step** 🛠️         | **None (drop-in, works with `.html` + `.js`)** | Required | Required | Required | Required |
-| **Rendering Approach** 🎨 | **Direct DOM Updates (No Diffing, No Virtual DOM)** | Virtual DOM diffing | Virtual DOM diffing | Change detection via zones | Precompiled updates (no VDOM, still re-renders) |
-| **Performance** ⚡         | **Ultra-Fast (Only Updates What’s Needed, No Extra Work)** | Good, but reconciliation overhead | Good, but reconciliation overhead | Heavy watchers/zones | Fast, but dependencies rerender |
-| **Memory Usage** 🧠        | **Low (No Virtual DOM, Minimal Garbage Collection)** | Higher (VDOM objects + GC) | Higher (VDOM overhead) | Higher (framework runtime) | Lower than React, some overhead |
-| **State Management** 📦   | **Q.Streams + Events (lightweight, no reconciliation)** | React state / Redux / Context | Vuex / Pinia | Services | Reactive stores |
-| **SSR & Hydration** 🌍     | **Pre-renders HTML + activates Tools dynamically** | Hydrates VDOM (slower) | Hydrates VDOM | Hydrates Angular components | Needs hydration after precompile |
-| **Component Model** 🧩    | **Q.Tools (behaviors on any DOM element)** | JSX + Hooks | Directives + templates | Components + decorators | Compiled components |
-| **Interactivity & Events** 🎭 | **Direct event binding (auto-cleans on removal)** | Event handlers in JSX (hook dependencies) | Event handlers in templates | Angular event bindings | Reactive bindings |
-| **Batch Updates** 🚀      | **Efficient (requestAnimationFrame + `.rendering()`)** | `setState` batching | NextTick batching | Zone-based batching | Dependency-based, no explicit batching |
-| **Lazy Loading** 💤       | **Built-in (images, tools, components auto-lazyload)** | Needs 3rd party libs | Needs 3rd party libs | Built-in, but heavy | Manual setup |
-| **Internationalization** 🌐 | **Built-in (`Q.Text`)** | 3rd party | 3rd party | i18n module | 3rd party |
-| **Incremental Adoption** 🔌 | **Yes (drop-in, enhance existing HTML without rewrite)** | No | No | No | No |
-| **SEO & Progressive Enhancement** 🔍 | **Works with static HTML (enhances dynamically)** | Needs JS hydration | Needs JS hydration | Needs JS hydration | Needs JS for interactivity |
-| **Ecosystem Dependence** 🌐 | **All-in-one (routing, templates, events, batching, caching built-in)** | Needs Router, Redux, i18n, etc. | Needs Vuex, Router, i18n | Huge framework but still many extra libs | Needs Kit/Sapper + libs |
-| **Learning Curve** 📚     | **Simple (declarative, minimal magic)** | Medium-high (hooks, context, JSX) | Medium (directives, reactivity caveats) | High (decorators, DI, RxJS) | Medium |
-| **Best For** ✅            | **High-performance apps, real-time dashboards, low-latency UI, social platforms** | Full-scale apps, large component hierarchies | Small-to-medium apps, good DX | Enterprise-scale apps | Small-to-medium apps, hobby projects |
-
 
 # Overview
 
@@ -645,5 +622,28 @@ In it, you will define the tools, methods, and other things. Here is an example:
     });
   });
 })(Q, jQuery);
+
+# ⚖️ Comparison with React, Vue, Angular, Svelte
+
+| Feature 🏆                | **Q.js** ⚡ (40KB) | **React** 🏗️ | **Vue** 🎨 | **Angular** 🏛️ | **Svelte** 🔥 |
+|---------------------------|------------------|--------------|------------|----------------|---------------|
+| **Bundle Size** 📦        | **~40KB gzipped (core + tools + events + routing)** | 42KB + ReactDOM (120KB) | ~60KB runtime | 140KB+ | ~50KB compiler/runtime |
+| **Build Step** 🛠️         | **None (drop-in, works with `.html` + `.js`)** | Required | Required | Required | Required |
+| **Rendering Approach** 🎨 | **Direct DOM Updates (No Diffing, No Virtual DOM)** | Virtual DOM diffing | Virtual DOM diffing | Change detection via zones | Precompiled updates (no VDOM, still re-renders) |
+| **Performance** ⚡         | **Ultra-Fast (Only Updates What’s Needed, No Extra Work)** | Good, but reconciliation overhead | Good, but reconciliation overhead | Heavy watchers/zones | Fast, but dependencies rerender |
+| **Memory Usage** 🧠        | **Low (No Virtual DOM, Minimal Garbage Collection)** | Higher (VDOM objects + GC) | Higher (VDOM overhead) | Higher (framework runtime) | Lower than React, some overhead |
+| **State Management** 📦   | **Q.Streams + Events (lightweight, no reconciliation)** | React state / Redux / Context | Vuex / Pinia | Services | Reactive stores |
+| **SSR & Hydration** 🌍     | **Pre-renders HTML + activates Tools dynamically** | Hydrates VDOM (slower) | Hydrates VDOM | Hydrates Angular components | Needs hydration after precompile |
+| **Component Model** 🧩    | **Q.Tools (behaviors on any DOM element)** | JSX + Hooks | Directives + templates | Components + decorators | Compiled components |
+| **Interactivity & Events** 🎭 | **Direct event binding (auto-cleans on removal)** | Event handlers in JSX (hook dependencies) | Event handlers in templates | Angular event bindings | Reactive bindings |
+| **Batch Updates** 🚀      | **Efficient (requestAnimationFrame + `.rendering()`)** | `setState` batching | NextTick batching | Zone-based batching | Dependency-based, no explicit batching |
+| **Lazy Loading** 💤       | **Built-in (images, tools, components auto-lazyload)** | Needs 3rd party libs | Needs 3rd party libs | Built-in, but heavy | Manual setup |
+| **Internationalization** 🌐 | **Built-in (`Q.Text`)** | 3rd party | 3rd party | i18n module | 3rd party |
+| **Incremental Adoption** 🔌 | **Yes (drop-in, enhance existing HTML without rewrite)** | No | No | No | No |
+| **SEO & Progressive Enhancement** 🔍 | **Works with static HTML (enhances dynamically)** | Needs JS hydration | Needs JS hydration | Needs JS hydration | Needs JS for interactivity |
+| **Ecosystem Dependence** 🌐 | **All-in-one (routing, templates, events, batching, caching built-in)** | Needs Router, Redux, i18n, etc. | Needs Vuex, Router, i18n | Huge framework but still many extra libs | Needs Kit/Sapper + libs |
+| **Learning Curve** 📚     | **Simple (declarative, minimal magic)** | Medium-high (hooks, context, JSX) | Medium (directives, reactivity caveats) | High (decorators, DI, RxJS) | Medium |
+| **Best For** ✅            | **High-performance apps, real-time dashboards, low-latency UI, social platforms** | Full-scale apps, large component hierarchies | Small-to-medium apps, good DX | Enterprise-scale apps | Small-to-medium apps, hobby projects |
+
 ```
 
