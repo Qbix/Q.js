@@ -14329,10 +14329,17 @@ function _addHandlebarsHelpers() {
 			var ba = Q.Tool.beingActivated;
 			return (ba ? ba.prefix : '');
 		});
-		Handlebars.registerHelper('join', function(array, sep, options) {
-		    return array.map(function(item) {
-		        return options.fn(item);
-		    }).join(sep);
+		Handlebars.registerHelper('join', function() {
+			var args = Array.prototype.slice.call(arguments, 0, -1);
+			var options = arguments[arguments.length - 1];
+			if (Array.isArray(args[0]) && typeof options.fn === 'function') {
+				var array = args[0];
+				var sep = args[1] || '';
+				return array.map(function(item) {
+					return options.fn(item);
+				}).join(sep);
+			}
+			return args.join('');
 		});
 		Handlebars.registerHelper('tool', function (name, id, tag, retain, options) {
 			if (!name) {

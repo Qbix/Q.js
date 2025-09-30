@@ -11327,7 +11327,7 @@ Q.Text = {
 		return content;
 	},
 
-	/**
+/**
 	 * Get the text from a specific text source or sources.
 	 * @method get
 	 * @static
@@ -11336,6 +11336,7 @@ Q.Text = {
 	 * @param {Function} callback Receives (err, content), may be called sync or async,
 	 *  where content is an Object formed by merging all the named text sources.
 	 * @param {Object} [options] Options to use for Q.request . May also include:
+	 * @param {String} [options.language] Try to fetch in a different language than the default one
 	 * @param {Boolean} [options.ignoreCache=false] If true, reloads the text source even if it's been already cached.
 	 * @param {Boolean} [options.merge=false] For Q.Text.set if content is loaded
 	 * @return {Q.Promise} Returns a promise, that is already resolved if the content
@@ -11345,7 +11346,7 @@ Q.Text = {
 		options = options || {};
 		return new Q.Promise(function (resolve, reject) {
 			var dir = Q.Text.dir;
-			var lls = Q.Text.languageLocaleString;
+			var lls = options.language || Q.Text.languageLocaleString;
 			var content = Q.getObject([lls, name], Q.Text.collection);
 			if (content) {
 				Q.handle(callback, Q.Text, [null, content]);
@@ -14329,10 +14330,17 @@ function _addHandlebarsHelpers() {
 			var ba = Q.Tool.beingActivated;
 			return (ba ? ba.prefix : '');
 		});
-		Handlebars.registerHelper('join', function(array, sep, options) {
-		    return array.map(function(item) {
-		        return options.fn(item);
-		    }).join(sep);
+		Handlebars.registerHelper('join', function() {
+			var args = Array.prototype.slice.call(arguments, 0, -1);
+			var options = arguments[arguments.length - 1];
+			if (Array.isArray(args[0]) && typeof options.fn === 'function') {
+				var array = args[0];
+				var sep = args[1] || '';
+				return array.map(function(item) {
+					return options.fn(item);
+				}).join(sep);
+			}
+			return args.join('');
 		});
 		Handlebars.registerHelper('tool', function (name, id, tag, retain, options) {
 			if (!name) {
