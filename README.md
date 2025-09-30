@@ -170,7 +170,7 @@ Q.Audio
 Q.IndexedDB
   .open(name, version, upgradeCallback)
   .get(store, key)
-  .set(store, value)
+  .put(store, value)
   .remove(store, key)
   .clear(store)
 
@@ -622,6 +622,7 @@ In it, you will define the tools, methods, and other things. Here is an example:
     });
   });
 })(Q, jQuery);
+```
 
 # ⚖️ Comparison with React, Vue, Angular, Svelte
 
