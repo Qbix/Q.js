@@ -316,118 +316,84 @@ Sp.replaceAll = function _String_prototype_replaceAll(pairs) {
 Sp.queryField = function Q_queryField(name, value) {
 	var what = this;
 	var prefixes = ['#!', '#', '?', '!'];
-	var count = prefixes.length;
 	var prefix = '';
-	var i, k, l, p, keys, parsed, ret, result;
-
-	// Strip leading prefix
-	for (i = 0; i < count; ++i) {
-		l = prefixes[i].length;
-		p = this.substring(0, l);
-		if (p === prefixes[i]) {
+	for (var i = 0; i < prefixes.length; ++i) {
+		var p = prefixes[i];
+		if (this.startsWith(p)) {
 			prefix = p;
-			what = this.substring(l);
+			what = this.substring(p.length);
 			break;
 		}
 	}
 
-	if (!name) {
-		ret = [];
-		parsed = expandNested(Q.parseQueryString(what, keys));
-		for (k in parsed) {
-			if (parsed[k] == null || parsed[k] === '') {
-				ret.push(k);
-			}
-		}
-		return ret;
-	}
-	if (Q.isArrayLike(name)) {
-		ret = {}, keys = [];
-		parsed = expandNested(Q.parseQueryString(what, keys));
-		for (i = 0, l = name.length; i < l; ++i) {
-			if (name[i] in parsed) {
-				ret[name[i]] = parsed[name[i]];
-			}
-		}
-		return ret;
-	} else if (Q.isPlainObject(name)) {
-		result = what;
-		Q.each(name, function (key, value) {
-			result = result.queryField(key, value);
-		});
-		return result;
-	} else if (value === undefined) {
-		parsed = expandNested(Q.parseQueryString(what));
-		return parsed[name];
-	} else if (value === null) {
-		keys = [];
-		parsed = Q.parseQueryString(what, keys);
-		var reg = new RegExp(name);
-		for (k in parsed) {
-			if (reg.test(k)) {
-				delete parsed[k];
-			}
-		}
-		return prefix + Q.queryString(parsed, keys);
-	} else {
-		keys = [];
-		parsed = Q.parseQueryString(what, keys);
-		if (!(name in parsed)) {
-			keys.push(name);
-		}
-		parsed[name] = value;
-		return prefix + Q.queryString(parsed, keys);
-	}
-};
+	// Parse into flat key-value pairs
+	var parsed = Q.parseQueryString(what || "");
 
-// helper: expand nested query keys like foo[bar][baz] → obj.foo.bar.baz
-function expandNested(obj) {
-	var out = {};
-	for (var key in obj) {
-		var val = obj[key];
-		var parts = [];
-		var m = key.match(/^([^\[]+)((?:\[[^\]]*\])*)$/);
-
-		if (!m) {
-			out[key] = val;
-			continue;
-		}
-		parts.push(m[1]);
-		if (m[2]) {
-			var inner = m[2].match(/\[([^\]]*)\]/g) || [];
-			for (var j = 0; j < inner.length; j++) {
-				parts.push(inner[j].slice(1, -1)); // strip [ ]
-			}
-		}
-		var cur = out;
+	// Minimal nesting support:
+	// Turns { "Q.payload[foo][bar]": "x" } → { Q: { payload: { foo: { bar: "x" }}}}
+	var nested = {};
+	for (var fullKey in parsed) {
+		var val = parsed[fullKey];
+		var parts = fullKey.split(/\[|\]/).filter(Boolean); // e.g. ["Q.payload", "foo", "bar"]
+		var cur = nested;
 		for (var j = 0; j < parts.length; j++) {
 			var part = parts[j];
-			var nextPart = parts[j + 1];
-
 			if (j === parts.length - 1) {
-				// last
-				if (part === "") { // []
-					if (!Array.isArray(cur)) cur = [];
-					cur.push(val);
-				} else {
-					cur[part] = val;
-				}
+				cur[part] = val;
 			} else {
-				if (part === "") {
-					if (!Array.isArray(cur)) cur = [];
-					if (!cur[cur.length - 1]) cur.push({});
-					cur = cur[cur.length - 1];
-				} else {
-					if (!(part in cur)) {
-						cur[part] = (nextPart === "" || /^\d+$/.test(nextPart)) ? [] : {};
-					}
-					cur = cur[part];
-				}
+				if (!(part in cur)) cur[part] = {};
+				cur = cur[part];
 			}
 		}
 	}
-	return out;
-}
+
+	// Handle different cases
+	if (!name) {
+		var ret = [];
+		for (var k in nested) {
+			if (nested[k] == null || nested[k] === '') ret.push(k);
+		}
+		return ret;
+	}
+
+	if (Q.isArrayLike(name)) {
+		var out = {};
+		for (var n = 0; n < name.length; ++n) {
+			out[name[n]] = nested[name[n]];
+		}
+		return out;
+	}
+
+	if (Q.isPlainObject(name)) {
+		var result = what;
+		for (var key in name) {
+			result = result.queryField(key, name[key]);
+		}
+		return result;
+	}
+
+	if (value === undefined) {
+		// Support partial matches like "Q.payload"
+		var parts = name.split(/\[|\]/).filter(Boolean);
+		var cur = nested;
+		for (var i2 = 0; i2 < parts.length; i2++) {
+			if (cur == null) return undefined;
+			cur = cur[parts[i2]];
+		}
+		return cur;
+	}
+
+	if (value === null) {
+		var reg = new RegExp(name);
+		for (var k in parsed) {
+			if (reg.test(k)) delete parsed[k];
+		}
+		return prefix + Q.queryString(parsed);
+	}
+
+	parsed[name] = value;
+	return prefix + Q.queryString(parsed);
+};
 
 /**
  * Obtain some unique hash from a string, analogous to Q_Utils::hashCode
@@ -5440,7 +5406,8 @@ function _loadToolScript(toolElement, callback, shared, parentId, options) {
 	for (var i=0, nl = classNames.length; i<nl; ++i) {
 		var className = classNames[i];
 		if (className === 'Q_tool'
-		|| className.slice(-5) !== '_tool') {
+		|| className.slice(-5) !== '_tool'
+		|| shared.whitelist && !shared.whitelist[className]) {
 			continue;
 		}
 		toolNames.push(Q.normalize.memoized(className.substring(0, className.length-5)));
@@ -9903,6 +9870,8 @@ Q.find = function _Q_find(elem, filter, callbackBefore, callbackAfter, options, 
  * @param {Object} [internal] stuff for internal use
  * @param {Boolean} [internal.lazyload] used by Q/lazyload tool
  * @param {Function} [internal.progress] function to cal with incremental progress, to debug Q.activate()
+ * @param {Object} [internal.whitelist] list names of CSS class names like Foo_bar_tool, with value true,
+ *  to filter which tools will be recognized and activated
  * @return {Q.Promise} Returns a promise with an extra .cancel() method to cancel the action
  */
 Q.activate = function _Q_activate(elem, options, callback, internal) {
@@ -11393,7 +11362,7 @@ Q.Text = {
 		return content;
 	},
 
-	/**
+/**
 	 * Get the text from a specific text source or sources.
 	 * @method get
 	 * @static
@@ -11402,6 +11371,7 @@ Q.Text = {
 	 * @param {Function} callback Receives (err, content), may be called sync or async,
 	 *  where content is an Object formed by merging all the named text sources.
 	 * @param {Object} [options] Options to use for Q.request . May also include:
+	 * @param {String} [options.language] Try to fetch in a different language than the default one
 	 * @param {Boolean} [options.ignoreCache=false] If true, reloads the text source even if it's been already cached.
 	 * @param {Boolean} [options.merge=false] For Q.Text.set if content is loaded
 	 * @return {Q.Promise} Returns a promise, that is already resolved if the content
@@ -11411,7 +11381,7 @@ Q.Text = {
 		options = options || {};
 		return new Q.Promise(function (resolve, reject) {
 			var dir = Q.Text.dir;
-			var lls = Q.Text.languageLocaleString;
+			var lls = options.language || Q.Text.languageLocaleString;
 			var content = Q.getObject([lls, name], Q.Text.collection);
 			if (content) {
 				Q.handle(callback, Q.Text, [null, content]);
