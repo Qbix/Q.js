@@ -4924,8 +4924,10 @@ function _loadToolScript(toolElement, callback, shared, parentId, options) {
 	var toolNames = [];
 	for (var i=0, nl = classNames.length; i<nl; ++i) {
 		var className = classNames[i];
+		var whitelist = shared.whitelist || Q.activate.whitelist;
 		if (className === 'Q_tool'
-		|| className.slice(-5) !== '_tool') {
+		|| className.slice(-5) !== '_tool'
+		|| whitelist && !whitelist[className]) {
 			continue;
 		}
 		toolNames.push(Q.normalize.memoized(className.substring(0, className.length-5)));
