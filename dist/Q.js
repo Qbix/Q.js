@@ -18,6 +18,51 @@ var _isOnline = null;
 var _isCordova = null;
 var _documentIsUnloading = null;
 
+// minimal jQuery-like implementation for dialogs, tools, etc.
+// you can load jQuery or similar library to override this
+if(!root.$){
+	function c(a){this.length=a.length;for(var b=0;b<a.length;b++)this[b]=a[b];}
+	if(!root.jQuery){
+		c.prototype={
+			each:function(a){for(var b=0;b<this.length;b++)a.call(this[b],b,this[b]);return this;},
+			html:function(a){if(a===undefined)return this[0]&&this[0].innerHTML;return this.each(function(){this.innerHTML=a;});},
+			append:function(a){return this.each(function(){var b=this;if(a instanceof c){a.each(function(){b.appendChild(this);});}else if(a instanceof Element){b.appendChild(a);}else if(typeof a==="string"){b.insertAdjacentHTML("beforeend",a);}});},
+			prepend:function(a){return this.each(function(){var b=this;if(a instanceof c){a.each(function(){b.insertBefore(this,b.firstChild);});}else if(a instanceof Element){b.insertBefore(a,b.firstChild);}else if(typeof a==="string"){b.insertAdjacentHTML("afterbegin",a);}});},
+			addClass:function(a){return this.each(function(){this.classList.add(a);});},
+			removeClass:function(a){return this.each(function(){this.classList.remove(a);});},
+			hasClass:function(a){return this[0]?this[0].classList.contains(a):false;},
+			attr:function(a,b){if(b===undefined)return this[0]&&this[0].getAttribute(a);return this.each(function(){this.setAttribute(a,b);});},
+			css:function(a,b){if(b===undefined)return this[0]&&getComputedStyle(this[0])[a];return this.each(function(){this.style[a]=b;});},
+			on:function(a,b){return this.each(function(){this.addEventListener(a,b);});},
+			off:function(a,b){return this.each(function(){this.removeEventListener(a,b);});},
+			trigger:function(a){return this.each(function(){this.dispatchEvent(new Event(a));});},
+			hide:function(){return this.each(function(){this.style.display="none";});},
+			show:function(){return this.each(function(){this.style.display="";});},
+			empty:function(){return this.each(function(){this.innerHTML="";});},
+			remove:function(){return this.each(function(){this.remove();});},
+			find:function(a){return new c(this[0]?this[0].querySelectorAll(a):[]);},
+			closest:function(a){return new c(this[0]?[this[0].closest(a)]:[]);},
+			height:function(){return this[0]?this[0].offsetHeight:0;},
+			outerHeight:function(){if(!this[0])return 0;var s=getComputedStyle(this[0]);return this[0].offsetHeight+parseFloat(s.marginTop||0)+parseFloat(s.marginBottom||0);},
+			data:function(a,b){if(!this[0])return;if(!this[0].__data)this[0].__data={};if(b===undefined)return this[0].__data[a];this.each(function(){this.__data[a]=b;});return this;},
+			is:function(a){if(!this[0])return!1;if(a===":visible")return this[0].offsetParent!==null;return this[0].matches(a);}
+		};
+		c.prototype.plugin=function(){return this;};
+		c.prototype.state=function(){return{};};
+		root.$=root.jQuery=function(a){
+			if(typeof a==="string"&&a.trim().startsWith("<")){
+				a=a.trim();var tagMatch=a.match(/^<([a-z0-9-]+)/i);
+				if(tagMatch){var tag=tagMatch[1];var attrMatch=a.match(/<[^>]+>/);var attrs={};(attrMatch?attrMatch[0]:"").replace(/([a-zA-Z_:][-a-zA-Z0-9_:.]*)="([^"]*)"/g,function(_,key,val){attrs[key]=val;});return new c([Q.element?Q.element(tag,attrs):Object.assign(document.createElement(tag),attrs)]);}
+				var div=document.createElement("div");div.innerHTML=a;return new c(Array.from(div.children));
+			}
+			if(typeof a==="string")return new c(document.querySelectorAll(a));
+			if(a instanceof Element||a===root||a===document)return new c([a]);
+			if(a&&a.length)return new c(a);
+			return new c([]);
+		};
+	}
+}
+
 /**
  * @class Q
  * @constructor
@@ -179,14 +224,16 @@ JSON.isValid = function (str) {
  * @class Array
  * @description Q extended methods for Arrays
  */
-Object.defineProperty(Array.prototype, "toHex", {
-	enumerable: false,
-	value: function () {
-		return this.map(function (x) { 
-			return x.toString(16).padStart(2, '0');
-		}).join('');
-	}
-  });
+if (!Array.prototype.toHex) {
+	Object.defineProperty(Array.prototype, "toHex", {
+		enumerable: false,
+		value: function () {
+			return this.map(function (x) { 
+				return x.toString(16).padStart(2, '0');
+			}).join('');
+		}
+	});
+}
 
 /**
  * @class String
@@ -768,7 +815,8 @@ Q.typeOf = function _Q_typeOf(value) {
 			return 'array';
 		} else if (typeof value.constructor != 'undefined'
 		&& typeof value.constructor.name != 'undefined') {
-			if (value.constructor.name == 'Object') {
+			if (value.constructor.name == 'Object'
+			|| value.constructor.name == '') {
 				return 'object';
 			}
 			return value.constructor.name;
@@ -1813,17 +1861,22 @@ Q.promisify = function (getter, useThis, callbackIndex) {
 			} else if (!(ai instanceof Function)) {
 				args.push(ai);
 			} else {
-				function _promisified(err, second) {
-					if (ai instanceof Function) {
-						return ai.apply(this, arguments);
-					}
-					if (err) {
-						return reject(err);
-					}
-					resolve(useThis ? this : second);
-				}
 				found = true;
-				args.push(_promisified);
+				args.push(function _promisified(err, second) {
+					if (ai instanceof Function) {
+						try {
+							ai.apply(this, arguments);
+						} catch (e) {
+							// swallow user callback exceptions
+						}
+					}
+					// always resolve on success if caller didn’t handle error
+					if (!err) {
+						resolve(useThis ? this : second);
+					} else if (!(ai instanceof Function)) {
+						reject(err);
+					}
+				});
 			}
 		});
 		if (callbackIndex instanceof Array) {
@@ -3090,7 +3143,7 @@ Q.beforeReplace = new Q.Event();
  * @return {Object} object with properties "src", "path" and "file"
  */
 Q.currentScript = function (stackLevels) {
-	var src = window._Q_currentScript_src || Q.getObject('document.currentScript.src');
+	var src = root._Q_currentScript_src || Q.getObject('document.currentScript.src');
 	if (!src) {
 		var index = 0, lines, i, l;
 		try {
@@ -3106,12 +3159,27 @@ Q.currentScript = function (stackLevels) {
 		}
 		src = lines[index];
 	}
-	var parts = src.match(/((http[s]?:\/\/.+\/|file:\/\/\/.+\/)([^\/]+\.(?:js|html)[^:]*))/);
+	var reLeadingGarbage = new RegExp("^[^a-zA-Z0-9]+(?=(https?:\\/\\/|file:\\/\\/))");
+	var reTrailingSuffix = new RegExp("(:[A-Za-z0-9_-]+){1,2}$");
+	var reMatchSrc       = new RegExp("^((?:https?:\\/\\/|file:\\/\\/\\/?)[^?#\\n]+\\/)([^\\/?#]+\\.js(?:[?#][^\\n]*)?)$", "i");
+	if (typeof src !== "string") {
+		console.warn("parseSrc: invalid type", typeof src);
+		return null;
+	}
+	src = src
+		.replace(reLeadingGarbage, "")
+		.replace(reTrailingSuffix, "")
+		.trim();
+	var parts = src.match(reMatchSrc);
+	if (!parts) {
+		console.warn("parseSrc: could not parse src", src);
+		return null;
+	}
 	return {
-		src: parts[1].split('?')[0],
-		srcWithQuerystring: parts[1],
-		path: parts[2],
-		file: parts[3]
+		src: parts[1] + parts[2].split(/[?#]/)[0],   // clean URL (no query/hash)
+		srcWithQuerystring: parts[1] + parts[2],     // keep full URL
+		path: parts[1],                              // directory path
+		file: parts[2].split(/[?#]/)[0]              // filename only
 	};
 };
 
@@ -4499,6 +4567,7 @@ var Tp = Q.Tool.prototype;
 Tp.renderTemplate = Q.promisify(function (name, fields, callback, options) {
 	var tool = this;
 	if (typeof fields === 'function') {
+		options = callback;
 		callback = fields;
 		fields = {};
 	}
@@ -5399,16 +5468,16 @@ Tp.toString = function _Q_Tool_prototype_toString() {
  * @param {Boolean} [options.placeholder=false] used internally to set placeholder HTML for tools waiting for activation
  * @return {boolean} whether the script needed to be loaded
  */
-function _loadToolScript(toolElement, callback, shared, parentId, options) {
+function _loadToolScript(toolElement, callback, shared, parentId, options, whitelist) {
 	var toolId = Q.Tool.calculateId(toolElement.id);
 	var classNames = toolElement.className.split(' ');
 	var toolNames = [];
 	for (var i=0, nl = classNames.length; i<nl; ++i) {
 		var className = classNames[i];
-		var whitelist = Q.activate.whitelist || shared.whitelist;
+		whitelist = whitelist || Q.activate.whitelist;
 		if (className === 'Q_tool'
 		|| className.slice(-5) !== '_tool'
-		|| whitelist && !whitelist[className]) {
+		|| (whitelist && !whitelist[className])) {
 			continue;
 		}
 		toolNames.push(Q.normalize.memoized(className.substring(0, className.length-5)));
@@ -5580,6 +5649,7 @@ Q.Tool.onMissingConstructor = new Q.Event();
  *  method function, such as { options: { a: "b" , c: "d" }}
  * @param {Object} [options] More information about the method
  * @param {boolean} [options.isGetter] set to true to indicate that the method will be wrapped with Q.getter()
+ * @param {boolean} [options.customPath] set to a custom path to load the method from, instead of the default
  */
 Q.Method = function (properties, options) {
 	Q.extend(this, properties);
@@ -5593,6 +5663,11 @@ Q.Method.load = function (o, k, url, closure) {
 	return new Promise(function (resolve, reject) {
 		Q.require(url, function (exported) {
 			if (exported) {
+				if (o.__loaded) {
+					o = o.__loaded; // in case o was replaced
+				} else if (o.__shim && o.__shim.__loaded) {
+					o = o.__shim.__loaded; // in case o[k] was replaced
+				}
 				var args = closure ? closure() : [];
 				if (!exported.Q_Method_load_executed) {
 					var m = exported.apply(o, args);
@@ -5611,6 +5686,7 @@ Q.Method.load = function (o, k, url, closure) {
 					v[property] = original[property];
 				}
 			}
+			original.__loaded = v;
 			resolve(v);
 			Q.Method.onLoad.handle(o, k, o[k], closure);
 		}, true);
@@ -5645,34 +5721,49 @@ Q.Method.onLoad = new Q.Event();
  */
 Q.Method.define = function (o, prefix, closure) {
 	if (!prefix) {
-		prefix = Q.currentScriptPath(Q.Method.define.options.siblingFolder);
+		prefix = Q.currentScriptPath() + '/' + Q.Method.define.options.siblingFolder;
 	}
 	Q.each(o, function (k) {
 		if (!o.hasOwnProperty(k) || !(o[k] instanceof Q.Method)) {
 			return;
 		}
-		// method stub is still there
+
 		var method = o[k];
-		o[k] = function _Q_Method_shim () {
-			var url = Q.url(prefix + '/' + k + '.js');
+
+		o[k] = method.__shim = function _Q_Method_shim() {
+			var url = Q.url(
+				(method.__options && method.__options.customPath)
+					? method.__options.customPath
+					: (prefix + '/' + k + '.js')
+			);
 			var t = this, a = arguments;
 			return Q.Method.load(o, k, url, closure)
-			.then(function (f) {
-				return f.apply(t, a);
-			});
+				.then(function (f) {
+					return f.apply(t, a);
+				});
 		};
+
 		Q.extend(o[k], method);
+
 		if (method.__options.isGetter) {
-			o[k].force = function _Q_Method_force_shim () {
-				var url = Q.url(prefix + '/' + k + '.js');
+			o[k].force = function _Q_Method_force_shim() {
+				var url = Q.url(
+					(method.__options && method.__options.customPath)
+						? method.__options.customPath
+						: (prefix + '/' + k + '.js')
+				);
 				var t = this, a = arguments;
 				return Q.Method.load(o, k, url, closure)
-				.then(function (f) {
-					return f.force.apply(t, a);
-				});
+					.then(function (f) {
+						return f.force.apply(t, a);
+					});
 			};
-			o[k].forget = function _Q_Method_forget_shim () {
-				var url = Q.url(prefix + '/' + k + '.js');
+			o[k].forget = function _Q_Method_forget_shim() {
+				var url = Q.url(
+					(method.__options && method.__options.customPath)
+						? method.__options.customPath
+						: (prefix + '/' + k + '.js')
+				);
 				var t = this, a = arguments;
 				return Q.Method.load(o, k, url, closure)
 					.then(function (f) {
@@ -5680,6 +5771,7 @@ Q.Method.define = function (o, prefix, closure) {
 					});
 			};
 		}
+
 		if (method.__options.cache) {
 			o[k].cache = method.__options.cache;
 		}
@@ -6648,13 +6740,13 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 });
 Q.IndexedDB.put = Q.promisify(function (store, value, callback) {
 	_DB_addEvents(store, store.put(value), callback);
-});
+}, false, 2);
 Q.IndexedDB.get = Q.promisify(function (store, key, callback) {
 	_DB_addEvents(store, store.get(key), callback);
-});
+}, false, 2);
 Q.IndexedDB['delete'] = Q.promisify(function (store, key, callback) {
 	_DB_addEvents(store, store.delete(key), callback);
-});
+}, false, 2);
 
 function _DB_addEvents(store, request, callback) {
 	request.onsuccess = function (event) {
@@ -6841,7 +6933,7 @@ Q.init = function _Q_init(options) {
 		return false;
 	}
 	Q.init.called = true;
-	Q.info.baseUrl = Q.info.baseUrl || location.href.split('/').slice(0, -1).join('/');
+	Q.info.baseUrl = Q.info.baseUrl || new URL('.', document.baseURI).href.slice(0, -1);
 	Q.info.imgLoading = Q.info.imgLoading || Q.url('{{Q}}/img/throbbers/loading.gif');
 	Q.loadUrl.options.slotNames = Q.info.slotNames;
 	_startCachingWithServiceWorker();
@@ -8938,8 +9030,8 @@ Q.updateUrls = function(callback) {
 				} catch (e) {}
 				if (!Q.isEmpty(urls)) {
 					Q.updateUrls.urls = urls;
-					Q.extend(Q.updateUrls.urls, 100, result);
 				}
+				Q.extend(Q.updateUrls.urls, 100, result);
 				json = JSON.stringify(Q.updateUrls.urls);
 				root.localStorage.setItem(Q.updateUrls.urlsKey, json);
 				if (timestamp = result['@timestamp']) {
@@ -10789,13 +10881,14 @@ function _activateTools(toolElement, options, shared) {
 					shared.internal && shared.internal.progress && shared.internal.progress(shared);
 				}
 				if (!tool) {
+					console.warn("Tool " + toolName + " was removed while activating itself on", toolElement);
 					return;
 				}
 				pendingCurrentEvent.handle.call(tool, options, result);
 				pendingCurrentEvent.removeAllHandlers();
 			});
 		}
-	}, shared, null, { placeholder: true });
+	}, shared, null, { placeholder: true }, shared.whitelist);
 }
 
 _activateTools.alreadyActivated = {};
@@ -10828,7 +10921,7 @@ function _initTools(toolElement, options, shared) {
 	_loadToolScript(toolElement,
 	function _initTools_doInit(toolElement, toolConstructor, toolName) {
 		currentEvent.add(_doInit, currentId + ' ' + toolName);
-	}, null, parentId);
+	}, null, parentId, {}, shared.whitelist);
 	
 	function _doInit() {
 		var tool = this;
@@ -11254,6 +11347,14 @@ Q.leaves = new Q.Method();
 Q.Method.define(Q);
 
 /**
+ * Sandboxed code execution utilities
+ * @class Q.Sandbox
+ */
+Q.Sandbox = Q.Method.define({
+	run: new Q.Method()
+});
+
+/**
  * Methods for working with data
  * @class Q.Data
  */
@@ -11263,6 +11364,7 @@ Q.Data = Q.Method.define({
 	decompress: new Q.Method(),
 	sign: new Q.Method(),
 	verify: new Q.Method(),
+	generateKey: new Q.Method(),
 	all: function (a, b) {
 		return a && b;
 	},
@@ -11281,8 +11383,32 @@ Q.Data = Q.Method.define({
 			u8arr[n] = bstr.charCodeAt(n);
 		}
 		return new Blob([u8arr], {type:mime});
+	},
+	randomString: function (count) {
+		var str = "";
+		while (str.length < count) {
+			str += Math.random().toString(36).slice(2);
+		}
+		return str.slice(0, count);
+	},
+	variant: function(sessionId, index, segments, seed) {
+		segments = segments || 2;
+		seed = seed || 0xBABE;
+		sessionId = sessionId.replace(/-/g, '');
+		var mixedStr = sessionId + ":" + index + ":" + seed;
+		var hash = 0x811c9dc5;
+		for (let i = 0; i < mixedStr.length; i++) {
+			hash ^= mixedStr.charCodeAt(i);
+			hash = Math.imul(hash, 0x01000193); // Large prime multiplier
+			hash ^= (hash >>> 17);
+			hash = Math.imul(hash, 0x85ebca6b); // MurmurHash3 prime
+			hash ^= (hash >>> 13);
+			hash = Math.imul(hash, 0xc2b2ae35); // Extra entropy spreading
+			hash ^= (hash >>> 16);
+		}
+		return (hash >>> 0) % segments === 0;
 	}
-}, "methods/Q/Data", function() {
+}, "{{Q}}/js/methods/Q/Data", function() {
 	return [Q];
 });
 
@@ -12357,11 +12483,11 @@ function _detectOrientation(e) {
 	if ((m && m("(orientation: landscape)").matches) || x > y) {
 		h.removeClass('Q_verticalOrientation')
 			.addClass('Q_horizontalOrientation');
-		Q.info.isVertical = false;
+		if (Q.info) Q.info.isVertical = false;
 	} else {
 		h.removeClass('Q_horizontalOrientation')
 			.addClass('Q_verticalOrientation');
-		Q.info.isVertical = true;
+		if (Q.info) Q.info.isVertical = true;
 	}
 }
 
@@ -12777,41 +12903,59 @@ Q.Visual = Q.Pointer = {
 		return observer;
 	},
 	/**
-	 * Works together with Q.Visual.animationStarted
-	 * Calls the callback after all current animations have ended.
+	 * Tracks transient animations and executes a callback once all have ended.
+	 * Works together with Q.Visual.animationStarted().
 	 * @static
 	 * @method waitUntilAnimationsEnd
-	 * @param {Function} callback The callback may synchronously call 
-	 *   animationStarted(), which will delay any subsequent callbacks,
-	 *   so any such callbacks would start animations sequentially.
-	 * @param {Array} params The parameters to send to the callback, if any
+	 * @param {Function} callback The callback to invoke once no animations are active.
+	 * @param {Array} [params] Optional parameters passed to the callback.
 	 */
 	waitUntilAnimationsEnd: function (callback, params) {
-		setTimeout(_executeIfAnimationsEnded, 0);
-		function _executeIfAnimationsEnded() {
+		// Slight delay so that any animationStarted() calls in the same tick register first
+		setTimeout(_check, 0);
+
+		function _check() {
 			var a = Q.Visual.animationStarted;
-			if ((a.animationsEnding || 0) < Date.now()) {
+
+			// If no animations have been started yet, run callback immediately
+			if (!a || !a.animationsEnding) {
 				Q.handle(callback, Q.Visual, params);
-			} else {
-				setTimeout(_executeIfAnimationsEnded, a.animationsEnding - Date.now);
+				return;
 			}
+
+			var now = Date.now();
+
+			// If current time is past the end of all animations, call callback
+			if (now >= a.animationsEnding) {
+				// Double-check in case callback itself starts a new animation
+				if (!a.animationsEnding || Date.now() >= a.animationsEnding) {
+					Q.handle(callback, Q.Visual, params);
+					return;
+				}
+			}
+
+			// Otherwise, recheck after the remaining duration
+			setTimeout(_check, Math.max(0, a.animationsEnding - now));
 		}
 	},
+
 	/**
-	 * Just call this to indicate that a transient animation has started,
-	 * in case someone wants to wait for all transient animations to end
-	 * they will call waitUntilAnimationsEnd()
-	 * @param {Number} duration in milliseconds
+	 * Call this whenever a transient animation starts.
+	 * It updates the global animation end timestamp.
+	 * @static
+	 * @method animationStarted
+	 * @param {Number} duration Duration of the animation in milliseconds.
 	 */
 	animationStarted: function (duration) {
 		var a = Q.Visual.animationStarted;
+
+		// Initialize tracking fields if missing
 		a.animationsEnding = a.animationsEnding || 0;
-		if (a.animationsEnding < Date.now()) {
-			a.animationsStarted = Date.now();
-			a.animationsEnding = a.animationsStarted + duration;
-		} else {
-			a.animationsEnding += duration;
-		}
+
+		var now = Date.now();
+
+		// Extend end time only from the later of now or existing end time
+		a.animationsEnding = Math.max(a.animationsEnding, now) + duration;
 	},
 	/**
 	 * Returns the x coordinate of an event relative to the document

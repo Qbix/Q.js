@@ -108,14 +108,16 @@ JSON.isValid = function (str) {
  * @class Array
  * @description Q extended methods for Arrays
  */
-Object.defineProperty(Array.prototype, "toHex", {
-	enumerable: false,
-	value: function () {
-		return this.map(function (x) { 
-			return x.toString(16).padStart(2, '0');
-		}).join('');
-	}
-});
+if (!Array.prototype.toHex) {
+	Object.defineProperty(Array.prototype, "toHex", {
+		enumerable: false,
+		value: function () {
+			return this.map(function (x) { 
+				return x.toString(16).padStart(2, '0');
+			}).join('');
+		}
+	});
+}
 
 /**
  * @class String
@@ -697,7 +699,8 @@ Q.typeOf = function _Q_typeOf(value) {
 			return 'array';
 		} else if (typeof value.constructor != 'undefined'
 		&& typeof value.constructor.name != 'undefined') {
-			if (value.constructor.name == 'Object') {
+			if (value.constructor.name == 'Object'
+			|| value.constructor.name == '') {
 				return 'object';
 			}
 			return value.constructor.name;
@@ -1668,17 +1671,22 @@ Q.promisify = function (getter, useThis, callbackIndex) {
 			} else if (!(ai instanceof Function)) {
 				args.push(ai);
 			} else {
-				function _promisified(err, second) {
-					if (ai instanceof Function) {
-						return ai.apply(this, arguments);
-					}
-					if (err) {
-						return reject(err);
-					}
-					resolve(useThis ? this : second);
-				}
 				found = true;
-				args.push(_promisified);
+				args.push(function _promisified(err, second) {
+					if (ai instanceof Function) {
+						try {
+							ai.apply(this, arguments);
+						} catch (e) {
+							// swallow user callback exceptions
+						}
+					}
+					// always resolve on success if caller didn’t handle error
+					if (!err) {
+						resolve(useThis ? this : second);
+					} else if (!(ai instanceof Function)) {
+						reject(err);
+					}
+				});
 			}
 		});
 		if (callbackIndex instanceof Array) {
@@ -2639,7 +2647,7 @@ Q.beforeReplace = new Q.Event();
  * @return {Object} object with properties "src", "path" and "file"
  */
 Q.currentScript = function (stackLevels) {
-	var src = window._Q_currentScript_src || Q.getObject('document.currentScript.src');
+	var src = root._Q_currentScript_src || Q.getObject('document.currentScript.src');
 	if (!src) {
 		var index = 0, lines, i, l;
 		try {
@@ -2655,12 +2663,27 @@ Q.currentScript = function (stackLevels) {
 		}
 		src = lines[index];
 	}
-	var parts = src.match(/((http[s]?:\/\/.+\/|file:\/\/\/.+\/)([^\/]+\.(?:js|html)[^:]*))/);
+	var reLeadingGarbage = new RegExp("^[^a-zA-Z0-9]+(?=(https?:\\/\\/|file:\\/\\/))");
+	var reTrailingSuffix = new RegExp("(:[A-Za-z0-9_-]+){1,2}$");
+	var reMatchSrc       = new RegExp("^((?:https?:\\/\\/|file:\\/\\/\\/?)[^?#\\n]+\\/)([^\\/?#]+\\.js(?:[?#][^\\n]*)?)$", "i");
+	if (typeof src !== "string") {
+		console.warn("parseSrc: invalid type", typeof src);
+		return null;
+	}
+	src = src
+		.replace(reLeadingGarbage, "")
+		.replace(reTrailingSuffix, "")
+		.trim();
+	var parts = src.match(reMatchSrc);
+	if (!parts) {
+		console.warn("parseSrc: could not parse src", src);
+		return null;
+	}
 	return {
-		src: parts[1].split('?')[0],
-		srcWithQuerystring: parts[1],
-		path: parts[2],
-		file: parts[3]
+		src: parts[1] + parts[2].split(/[?#]/)[0],   // clean URL (no query/hash)
+		srcWithQuerystring: parts[1] + parts[2],     // keep full URL
+		path: parts[1],                              // directory path
+		file: parts[2].split(/[?#]/)[0]              // filename only
 	};
 };
 
@@ -3970,6 +3993,7 @@ var Tp = Q.Tool.prototype;
 Tp.renderTemplate = Q.promisify(function (name, fields, callback, options) {
 	var tool = this;
 	if (typeof fields === 'function') {
+		options = callback;
 		callback = fields;
 		fields = {};
 	}
@@ -4869,13 +4893,13 @@ Tp.toString = function _Q_Tool_prototype_toString() {
  * @param {Boolean} [options.placeholder=false] used internally to set placeholder HTML for tools waiting for activation
  * @return {boolean} whether the script needed to be loaded
  */
-function _loadToolScript(toolElement, callback, shared, parentId, options) {
+function _loadToolScript(toolElement, callback, shared, parentId, options, whitelist) {
 	var toolId = Q.Tool.calculateId(toolElement.id);
 	var classNames = toolElement.className.split(' ');
 	var toolNames = [];
 	for (var i=0, nl = classNames.length; i<nl; ++i) {
 		var className = classNames[i];
-		var whitelist = shared.whitelist || Q.activate.whitelist;
+		whitelist = whitelist || Q.activate.whitelist;
 		if (className === 'Q_tool'
 		|| className.slice(-5) !== '_tool'
 		|| whitelist && !whitelist[className]) {
@@ -5050,6 +5074,7 @@ Q.Tool.onMissingConstructor = new Q.Event();
  *  method function, such as { options: { a: "b" , c: "d" }}
  * @param {Object} [options] More information about the method
  * @param {boolean} [options.isGetter] set to true to indicate that the method will be wrapped with Q.getter()
+ * @param {boolean} [options.customPath] set to a custom path to load the method from, instead of the default
  */
 Q.Method = function (properties, options) {
 	Q.extend(this, properties);
@@ -5063,6 +5088,11 @@ Q.Method.load = function (o, k, url, closure) {
 	return new Promise(function (resolve, reject) {
 		Q.require(url, function (exported) {
 			if (exported) {
+				if (o.__loaded) {
+					o = o.__loaded; // in case o was replaced
+				} else if (o.__shim && o.__shim.__loaded) {
+					o = o.__shim.__loaded; // in case o[k] was replaced
+				}
 				var args = closure ? closure() : [];
 				if (!exported.Q_Method_load_executed) {
 					var m = exported.apply(o, args);
@@ -5081,6 +5111,7 @@ Q.Method.load = function (o, k, url, closure) {
 					v[property] = original[property];
 				}
 			}
+			original.__loaded = v;
 			resolve(v);
 			Q.Method.onLoad.handle(o, k, o[k], closure);
 		}, true);
@@ -5115,34 +5146,49 @@ Q.Method.onLoad = new Q.Event();
  */
 Q.Method.define = function (o, prefix, closure) {
 	if (!prefix) {
-		prefix = Q.currentScriptPath(Q.Method.define.options.siblingFolder);
+		prefix = Q.currentScriptPath() + '/' + Q.Method.define.options.siblingFolder;
 	}
 	Q.each(o, function (k) {
 		if (!o.hasOwnProperty(k) || !(o[k] instanceof Q.Method)) {
 			return;
 		}
-		// method stub is still there
+
 		var method = o[k];
-		o[k] = function _Q_Method_shim () {
-			var url = Q.url(prefix + '/' + k + '.js');
+
+		o[k] = method.__shim = function _Q_Method_shim() {
+			var url = Q.url(
+				(method.__options && method.__options.customPath)
+					? method.__options.customPath
+					: (prefix + '/' + k + '.js')
+			);
 			var t = this, a = arguments;
 			return Q.Method.load(o, k, url, closure)
-			.then(function (f) {
-				return f.apply(t, a);
-			});
+				.then(function (f) {
+					return f.apply(t, a);
+				});
 		};
+
 		Q.extend(o[k], method);
+
 		if (method.__options.isGetter) {
-			o[k].force = function _Q_Method_force_shim () {
-				var url = Q.url(prefix + '/' + k + '.js');
+			o[k].force = function _Q_Method_force_shim() {
+				var url = Q.url(
+					(method.__options && method.__options.customPath)
+						? method.__options.customPath
+						: (prefix + '/' + k + '.js')
+				);
 				var t = this, a = arguments;
 				return Q.Method.load(o, k, url, closure)
-				.then(function (f) {
-					return f.force.apply(t, a);
-				});
+					.then(function (f) {
+						return f.force.apply(t, a);
+					});
 			};
-			o[k].forget = function _Q_Method_forget_shim () {
-				var url = Q.url(prefix + '/' + k + '.js');
+			o[k].forget = function _Q_Method_forget_shim() {
+				var url = Q.url(
+					(method.__options && method.__options.customPath)
+						? method.__options.customPath
+						: (prefix + '/' + k + '.js')
+				);
 				var t = this, a = arguments;
 				return Q.Method.load(o, k, url, closure)
 					.then(function (f) {
@@ -5150,6 +5196,7 @@ Q.Method.define = function (o, prefix, closure) {
 					});
 			};
 		}
+
 		if (method.__options.cache) {
 			o[k].cache = method.__options.cache;
 		}
@@ -5549,7 +5596,7 @@ Q.init = function _Q_init(options) {
 		return false;
 	}
 	Q.init.called = true;
-	Q.info.baseUrl = Q.info.baseUrl || location.href.split('/').slice(0, -1).join('/');
+	Q.info.baseUrl = Q.info.baseUrl || new URL('.', document.baseURI).href;
 	Q.info.imgLoading = Q.info.imgLoading || Q.url('{{Q}}/img/throbbers/loading.gif');
 	Q.loadUrl.options.slotNames = Q.info.slotNames;
 	_detectOrientation();
@@ -7163,8 +7210,8 @@ Q.updateUrls = function(callback) {
 				} catch (e) {}
 				if (!Q.isEmpty(urls)) {
 					Q.updateUrls.urls = urls;
-					Q.extend(Q.updateUrls.urls, 100, result);
 				}
+				Q.extend(Q.updateUrls.urls, 100, result);
 				json = JSON.stringify(Q.updateUrls.urls);
 				root.localStorage.setItem(Q.updateUrls.urlsKey, json);
 				if (timestamp = result['@timestamp']) {
@@ -8842,13 +8889,14 @@ function _activateTools(toolElement, options, shared) {
 					shared.internal && shared.internal.progress && shared.internal.progress(shared);
 				}
 				if (!tool) {
+					console.warn("Tool " + toolName + " was removed while activating itself on", toolElement);
 					return;
 				}
 				pendingCurrentEvent.handle.call(tool, options, result);
 				pendingCurrentEvent.removeAllHandlers();
 			});
 		}
-	}, shared, null, { placeholder: true });
+	}, shared, null, { placeholder: true }, shared.whitelist);
 }
 
 _activateTools.alreadyActivated = {};
@@ -8881,7 +8929,7 @@ function _initTools(toolElement, options, shared) {
 	_loadToolScript(toolElement,
 	function _initTools_doInit(toolElement, toolConstructor, toolName) {
 		currentEvent.add(_doInit, currentId + ' ' + toolName);
-	}, null, parentId);
+	}, null, parentId, {}, shared.whitelist);
 	
 	function _doInit() {
 		var tool = this;
@@ -9307,6 +9355,14 @@ Q.leaves = new Q.Method();
 Q.Method.define(Q);
 
 /**
+ * Sandboxed code execution utilities
+ * @class Q.Sandbox
+ */
+Q.Sandbox = Q.Method.define({
+	run: new Q.Method()
+});
+
+/**
  * Methods for working with data
  * @class Q.Data
  */
@@ -9316,6 +9372,7 @@ Q.Data = Q.Method.define({
 	decompress: new Q.Method(),
 	sign: new Q.Method(),
 	verify: new Q.Method(),
+	generateKey: new Q.Method(),
 	all: function (a, b) {
 		return a && b;
 	},
@@ -9334,8 +9391,15 @@ Q.Data = Q.Method.define({
 			u8arr[n] = bstr.charCodeAt(n);
 		}
 		return new Blob([u8arr], {type:mime});
+	},
+	randomString: function (count) {
+		var str = "";
+		while (str.length < count) {
+			str += Math.random().toString(36).slice(2);
+		}
+		return str.slice(0, count);
 	}
-}, "methods/Q/Data", function() {
+}, "{{Q}}/js/methods/Q/Data", function() {
 	return [Q];
 });
 
