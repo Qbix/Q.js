@@ -23,7 +23,7 @@ var _documentIsUnloading = null;
 if(!root.$){
 	function c(a){this.length=a.length;for(var b=0;b<a.length;b++)this[b]=a[b];}
 	if(!root.jQuery){
-		c.prototype={
+		var fn={
 			each:function(a){for(var b=0;b<this.length;b++)a.call(this[b],b,this[b]);return this;},
 			html:function(a){if(a===undefined)return this[0]&&this[0].innerHTML;return this.each(function(){this.innerHTML=a;});},
 			append:function(a){return this.each(function(){var b=this;if(a instanceof c){a.each(function(){b.appendChild(this);});}else if(a instanceof Element){b.appendChild(a);}else if(typeof a==="string"){b.insertAdjacentHTML("beforeend",a);}});},
@@ -32,7 +32,7 @@ if(!root.$){
 			removeClass:function(a){return this.each(function(){this.classList.remove(a);});},
 			hasClass:function(a){return this[0]?this[0].classList.contains(a):false;},
 			attr:function(a,b){if(b===undefined)return this[0]&&this[0].getAttribute(a);return this.each(function(){this.setAttribute(a,b);});},
-			css:function(a,b){if(b===undefined)return this[0]&&getComputedStyle(this[0])[a];return this.each(function(){this.style[a]=b;});},
+			css:function(a,b){if(typeof a==="object"&&a){for(var k in a)this.each(function(){this.style[k]=a[k];});return this;}if(b===undefined)return this[0]&&getComputedStyle(this[0])[a];return this.each(function(){this.style[a]=b;});},
 			on:function(a,b){return this.each(function(){this.addEventListener(a,b);});},
 			off:function(a,b){return this.each(function(){this.removeEventListener(a,b);});},
 			trigger:function(a){return this.each(function(){this.dispatchEvent(new Event(a));});},
@@ -45,11 +45,15 @@ if(!root.$){
 			height:function(){return this[0]?this[0].offsetHeight:0;},
 			outerHeight:function(){if(!this[0])return 0;var s=getComputedStyle(this[0]);return this[0].offsetHeight+parseFloat(s.marginTop||0)+parseFloat(s.marginBottom||0);},
 			data:function(a,b){if(!this[0])return;if(!this[0].__data)this[0].__data={};if(b===undefined)return this[0].__data[a];this.each(function(){this.__data[a]=b;});return this;},
-			is:function(a){if(!this[0])return!1;if(a===":visible")return this[0].offsetParent!==null;return this[0].matches(a);}
+			is:function(a){if(!this[0])return!1;if(a===":visible")return this[0].offsetParent!==null;return this[0].matches(a);},
+			ready:function(fn){if(this[0]===document||this[0]===root){if(document.readyState==="complete"||document.readyState==="interactive"){setTimeout(fn,0);}else{document.addEventListener("DOMContentLoaded",fn);}}return this;}
 		};
-		c.prototype.plugin=function(){return this;};
-		c.prototype.state=function(){return{};};
+		["click","focus","blur","change","submit"].forEach(function(ev){
+			fn[ev]=function(handler){if(handler)return this.on(ev,handler);return this.trigger(ev);};
+		});
+		c.prototype=fn;
 		root.$=root.jQuery=function(a){
+			if(typeof a==="function"){return $(document).ready(a);}
 			if(typeof a==="string"&&a.trim().startsWith("<")){
 				a=a.trim();var tagMatch=a.match(/^<([a-z0-9-]+)/i);
 				if(tagMatch){var tag=tagMatch[1];var attrMatch=a.match(/<[^>]+>/);var attrs={};(attrMatch?attrMatch[0]:"").replace(/([a-zA-Z_:][-a-zA-Z0-9_:.]*)="([^"]*)"/g,function(_,key,val){attrs[key]=val;});return new c([Q.element?Q.element(tag,attrs):Object.assign(document.createElement(tag),attrs)]);}
@@ -60,6 +64,8 @@ if(!root.$){
 			if(a&&a.length)return new c(a);
 			return new c([]);
 		};
+		root.$.fn=fn;
+		fn.constructor=c;
 	}
 }
 
@@ -9653,6 +9659,17 @@ Q.ServiceWorker = {
 				console.warn("Q.ServiceWorker.start error", error);
 			});
 		});
+		// Listen for cookie updates coming from the Service Worker
+		navigator.serviceWorker.addEventListener('message', event => {
+			const data = event.data || {};
+			if (data.type === 'Set-Cookie-JS' && data.cookies) {
+				for (const [k, v] of Object.entries(data.cookies)) {
+					// Update document.cookie so future page requests carry it
+					document.cookie = encodeURIComponent(k) + '=' + encodeURIComponent(v) + '; path=/';
+					console.log('[SW] Updated cookie from service worker:', k);
+				}
+			}
+		});
 	}
 }
 try {
@@ -9724,6 +9741,26 @@ function _startCachingWithServiceWorker() {
  *   If only name was passed, returns the stored value of the cookie, or null.
  *   Returns false if cookie operations are blocked (e.g. exception is thrown by the browser)
  */
+/**
+ * Gets, sets or a deletes a cookie.
+ * May notify our service worker of the change.
+ * @static
+ * @method cookie
+ * @param {String} name
+ *   The name of the cookie
+ * @param {Mixed} value
+ *   Optional. If passed, this is the new value of the cookie.
+ *   If null is passed here, the cookie is "deleted".
+ * @param {Object} options
+ *   Optional hash of options, including:
+ * @param {number} [options.expires] number of milliseconds until expiration. Defaults to session cookie.
+ * @param {String} [options.domain] the domain to set cookie. If you leave it blank,
+ *  then the cookie will be set as a host-only cookie, meaning that subdomains won't get it.
+ * @param {String} [options.path] path to set cookie. Defaults to path from Q.baseUrl()
+ * @return {String|null|false}
+ *   If only name was passed, returns the stored value of the cookie, or null.
+ *   Returns false if cookie operations are blocked (e.g. exception is thrown by the browser)
+ */
 Q.cookie = function _Q_cookie(name, value, options) {
 	try {
 		var parts;
@@ -9732,44 +9769,67 @@ Q.cookie = function _Q_cookie(name, value, options) {
 			var path, domain = '';
 			parts = Q.baseUrl().split('://');
 			if ('path' in options) {
-				path = ';path='+options.path;
+				path = ';path=' + options.path;
 			} else if (parts[1]) {
 				path = ';path=/' + parts[1].split('/').slice(1).join('/');
 			} else {
 				return null;
 			}
 			if ('domain' in options) {
-				domain = ';domain='+options.domain;
+				domain = ';domain=' + options.domain;
 			} else {
 				// remove any possibly conflicting cookies from .hostname, with same path
 				var o = Q.copy(options);
 				var hostname = parts[1].split('/').shift();
-				o.domain = '.'+hostname;
+				o.domain = '.' + hostname;
 				Q.cookie(name, null, o);
-				domain = ''; //';domain=' + hostname;
+				domain = '';
+			}
+			function _notifyServiceWorker(val) {
+				try {
+					if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
+						return;
+					}
+					var msg = {
+						type: 'Set-Cookie-JS',
+						cookies: {}
+					};
+					msg.cookies[name] = val;
+					navigator.serviceWorker.controller.postMessage(msg);
+				} catch (e) {
+					console.warn('Q.cookie SW notify failed:', e);
+				}
 			}
 			if (value === null) {
-				document.cookie = encodeURIComponent(name)+'=;expires=Thu, 01-Jan-1970 00:00:01 GMT'+path+domain;
+				document.cookie = encodeURIComponent(name) +
+					'=;expires=Thu, 01-Jan-1970 00:00:01 GMT' + path + domain;
+				_notifyServiceWorker(''); // deletion
 				return null;
 			}
 			var expires = '';
 			if (options.expires) {
 				expires = new Date();
 				expires.setTime((new Date()).getTime() + options.expires);
-				expires = ';expires='+expires.toGMTString();
+				expires = ';expires=' + expires.toGMTString();
 			}
-			document.cookie = encodeURIComponent(name)+'='+encodeURIComponent(value)+expires+path+domain;
+			document.cookie = encodeURIComponent(name) + '=' +
+				encodeURIComponent(value) + expires + path + domain;
+
+			_notifyServiceWorker(String(value)); // update or add
 			return null;
 		}
-	
-		// Otherwise, return the value
-		var cookies = document.cookie.split(';'), result;
-		for (var i=0; i<cookies.length; ++i) {
+		// Otherwise, return the cookie value
+		var cookies = document.cookie.split(';');
+		var result;
+		for (var i = 0; i < cookies.length; ++i) {
 			parts = cookies[i].split('=');
 			result = parts.splice(0, 1);
 			result.push(parts.join('='));
-			if (decodeURIComponent(result[0].trim()) === name) {
-				return result.length < 2 ? null : decodeURIComponent(result[1]);
+			if (decodeURIComponent(result[0].replace(/^\s+|\s+$/g, '')) === name) {
+				if (result.length < 2) {
+					return null;
+				}
+				return decodeURIComponent(result[1]);
 			}
 		}
 		return null;
@@ -14370,6 +14430,7 @@ Q.onInit.add(function () {
 	} else {
 		Q.onHashChange.set(Q_hashChangeHandler, 'Q.loadUrl');
 	}
+	Q.info.imgLoading = Q.url(Q.info.imgLoading || '{{Q}}/img/throbbers/loading.gif');
 	Q.onReady.set(function () {
 		// renew sockets when reverting to online
 		Q.onOnline.set(Q.Socket.reconnectAll, 'Q.Socket');
@@ -14379,6 +14440,19 @@ Q.onInit.add(function () {
 			navigator.splashscreen.hide();
 		}
 	}, 'Q.Socket');
+	
+	var substitutions = Q.interpolateUrl.substitutions;
+	substitutions['baseUrl'] = substitutions[Q.info.app] = substitutions['baseUrl'] || Q.baseUrl();
+	substitutions['Q'] = substitutions['Q'] || Q.pluginBaseUrl('Q');
+	substitutions['currentScriptPath'] = currentScriptPath;
+	for (var plugin in Q.plugins) {
+		substitutions[plugin] = Q.pluginBaseUrl(plugin);
+	}
+	var sfu = Q.interpolateUrl.substitutionsWithFullURL;
+	for (var k in substitutions) {
+		sfu[k] = Q.url(substitutions[k]);
+	}
+	Q.info.imgLoading = Q.url(Q.info.imgLoading || '{{Q}}/img/throbbers/loading.gif');
 
 	var QtQw = Q.text.Q.words;
 	Q.Pointer.ClickOrTap = QtQw.ClickOrTap = useTouchEvents ? QtQw.Tap : QtQw.Click;
