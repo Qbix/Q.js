@@ -8875,7 +8875,14 @@ function _activateTools(toolElement, options, shared) {
 			// NOTE: inside the tool constructor, after you add
 			// any child elements, call Q.activate() and Qbix
 			// will work correctly, whether it's sync or async.
-			Q.Tool.onLoadedConstructor(toolName).addOnce(function () {
+			var event = Q.Tool.onLoadedConstructor(toolName);
+			var required = Q.Tool.constructors[toolName].required;
+			if (required) {
+				for (var i=0; i<required.length; ++i) {
+					event = event.and(Q.Tool.onLoadedConstructor(required[i]));
+				}
+			}
+			event.addOnce(function () {
 				var _constructor = _constructors[toolName];
 				var result = new _constructor(toolElement, options);
 				var tool = Q.getObject(['Q', 'tools', toolName], toolElement);

@@ -18,57 +18,6 @@ var _isOnline = null;
 var _isCordova = null;
 var _documentIsUnloading = null;
 
-// minimal jQuery-like implementation for dialogs, tools, etc.
-// you can load jQuery or similar library to override this
-if(!root.$){
-	function c(a){this.length=a.length;for(var b=0;b<a.length;b++)this[b]=a[b];}
-	if(!root.jQuery){
-		var fn={
-			each:function(a){for(var b=0;b<this.length;b++)a.call(this[b],b,this[b]);return this;},
-			html:function(a){if(a===undefined)return this[0]&&this[0].innerHTML;return this.each(function(){this.innerHTML=a;});},
-			append:function(a){return this.each(function(){var b=this;if(a instanceof c){a.each(function(){b.appendChild(this);});}else if(a instanceof Element){b.appendChild(a);}else if(typeof a==="string"){b.insertAdjacentHTML("beforeend",a);}});},
-			prepend:function(a){return this.each(function(){var b=this;if(a instanceof c){a.each(function(){b.insertBefore(this,b.firstChild);});}else if(a instanceof Element){b.insertBefore(a,b.firstChild);}else if(typeof a==="string"){b.insertAdjacentHTML("afterbegin",a);}});},
-			addClass:function(a){return this.each(function(){this.classList.add(a);});},
-			removeClass:function(a){return this.each(function(){this.classList.remove(a);});},
-			hasClass:function(a){return this[0]?this[0].classList.contains(a):false;},
-			attr:function(a,b){if(b===undefined)return this[0]&&this[0].getAttribute(a);return this.each(function(){this.setAttribute(a,b);});},
-			css:function(a,b){if(typeof a==="object"&&a){for(var k in a)this.each(function(){this.style[k]=a[k];});return this;}if(b===undefined)return this[0]&&getComputedStyle(this[0])[a];return this.each(function(){this.style[a]=b;});},
-			on:function(a,b){return this.each(function(){this.addEventListener(a,b);});},
-			off:function(a,b){return this.each(function(){this.removeEventListener(a,b);});},
-			trigger:function(a){return this.each(function(){this.dispatchEvent(new Event(a));});},
-			hide:function(){return this.each(function(){this.style.display="none";});},
-			show:function(){return this.each(function(){this.style.display="";});},
-			empty:function(){return this.each(function(){this.innerHTML="";});},
-			remove:function(){return this.each(function(){this.remove();});},
-			find:function(a){return new c(this[0]?this[0].querySelectorAll(a):[]);},
-			closest:function(a){return new c(this[0]?[this[0].closest(a)]:[]);},
-			height:function(){return this[0]?this[0].offsetHeight:0;},
-			outerHeight:function(){if(!this[0])return 0;var s=getComputedStyle(this[0]);return this[0].offsetHeight+parseFloat(s.marginTop||0)+parseFloat(s.marginBottom||0);},
-			data:function(a,b){if(!this[0])return;if(!this[0].__data)this[0].__data={};if(b===undefined)return this[0].__data[a];this.each(function(){this.__data[a]=b;});return this;},
-			is:function(a){if(!this[0])return!1;if(a===":visible")return this[0].offsetParent!==null;return this[0].matches(a);},
-			ready:function(fn){if(this[0]===document||this[0]===root){if(document.readyState==="complete"||document.readyState==="interactive"){setTimeout(fn,0);}else{document.addEventListener("DOMContentLoaded",fn);}}return this;}
-		};
-		["click","focus","blur","change","submit"].forEach(function(ev){
-			fn[ev]=function(handler){if(handler)return this.on(ev,handler);return this.trigger(ev);};
-		});
-		c.prototype=fn;
-		root.$=root.jQuery=function(a){
-			if(typeof a==="function"){return $(document).ready(a);}
-			if(typeof a==="string"&&a.trim().startsWith("<")){
-				a=a.trim();var tagMatch=a.match(/^<([a-z0-9-]+)/i);
-				if(tagMatch){var tag=tagMatch[1];var attrMatch=a.match(/<[^>]+>/);var attrs={};(attrMatch?attrMatch[0]:"").replace(/([a-zA-Z_:][-a-zA-Z0-9_:.]*)="([^"]*)"/g,function(_,key,val){attrs[key]=val;});return new c([Q.element?Q.element(tag,attrs):Object.assign(document.createElement(tag),attrs)]);}
-				var div=document.createElement("div");div.innerHTML=a;return new c(Array.from(div.children));
-			}
-			if(typeof a==="string")return new c(document.querySelectorAll(a));
-			if(a instanceof Element||a===root||a===document)return new c([a]);
-			if(a&&a.length)return new c(a);
-			return new c([]);
-		};
-		root.$.fn=fn;
-		fn.constructor=c;
-	}
-}
-
 /**
  * @class Q
  * @constructor
@@ -8372,6 +8321,8 @@ Q.ajaxExtend = function _Q_ajaxExtend(what, slotNames, options) {
  * @see Q.request
  * @static
  * @method req
+ * @param {Object} [fields]
+ *  Optional object of fields to pass, syntactic sugar for adding fields to GET requests
  * @param {String} uri
  *  A string of the form "Module/action"
  * @param {String|Array} slotNames
@@ -10922,7 +10873,14 @@ function _activateTools(toolElement, options, shared) {
 			// NOTE: inside the tool constructor, after you add
 			// any child elements, call Q.activate() and Qbix
 			// will work correctly, whether it's sync or async.
-			Q.Tool.onLoadedConstructor(toolName).addOnce(function () {
+			var event = Q.Tool.onLoadedConstructor(toolName);
+			var required = Q.Tool.constructors[toolName].required;
+			if (required) {
+				for (var i=0; i<required.length; ++i) {
+					event = event.and(Q.Tool.onLoadedConstructor(required[i]));
+				}
+			}
+			event.addOnce(function () {
 				var _constructor = _constructors[toolName];
 				var result = new _constructor(toolElement, options);
 				var tool = Q.getObject(['Q', 'tools', toolName], toolElement);
@@ -14308,9 +14266,9 @@ Q.Masks = {
 			var mask = Q.Masks.collection[k];
 			if (!mask.counter) continue;
 			var html = document.documentElement;
-			var offset = $('body').offset();
-			var scrollLeft = Q.Visual.scrollLeft() - offset.left;
-			var scrollTop = Q.Visual.scrollTop() - offset.top;
+			var bodyRect = document.body.getBoundingClientRect();
+			var scrollLeft = Q.Visual.scrollLeft() - bodyRect.left;
+			var scrollTop = Q.Visual.scrollTop() - bodyRect.top;
 			var ms = mask.element.style;
 			var rect = (mask.shouldCover || html).getBoundingClientRect();
 			mask.rect = {
