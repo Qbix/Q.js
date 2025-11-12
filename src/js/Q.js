@@ -9328,7 +9328,7 @@ Q.require = function (src, callback, synchronously, once) {
  */
 Q.import = function (src) {
 	Q.handle(Q.import.onCall, Q, [src]);
-	return this.import(Q.url(src));
+	return import(Q.url(src));
 };
 
 Q.import.onCall = new Q.Event();
