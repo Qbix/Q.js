@@ -11504,7 +11504,7 @@ Q.Text = {
 		return content;
 	},
 
-/**
+	/**
 	 * Get the text from a specific text source or sources.
 	 * @method get
 	 * @static
@@ -11613,6 +11613,9 @@ Q.Text = {
 				continue; // asked not to extend
 			}
 			var text = objectToExtend.text = objectToExtend.text || [];
+			if (typeof text === 'string') {
+				text = objectToExtend.text = [text];
+			}
 			Q.each(d[namePrefix], function (i, t) {
 				if (text.indexOf(t) < 0) {
 					text.push(t);
