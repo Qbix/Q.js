@@ -6529,6 +6529,31 @@ Q.Cache.local.caches = {};
 Q.Cache.session.caches = {};
 
 /**
+ * Unified storage with automatic fallback.
+ * Attempts localStorage, then sessionStorage, then in-memory object.
+ *
+ * @class Q.Storage
+ * @module Q
+ */
+Q.Storage = (function () {
+	var ls = root.localStorage, ss = root.sessionStorage;
+	try {
+		ls.setItem('__qtest', '1'); ls.removeItem('__qtest'); return ls;
+	} catch (e) {}
+
+	try {
+		ss.setItem('__qtest', '1'); ss.removeItem('__qtest'); return ss;
+	} catch (e) {}
+
+	var mem = {};
+	return {
+		getItem: function (k) { return mem[k]; },
+		setItem: function (k, v) { mem[k] = v; },
+		removeItem: function (k) { delete mem[k]; }
+	};
+})();
+
+/**
  * Functions related to IndexedDB, when it is available
  * @class Q.IndexedDB
  * @constructor
@@ -8131,7 +8156,7 @@ Q.url = function _Q_url(what, fields, options) {
 		}
 	} else if (options && options.cacheBust) {
 		cb = options.cacheBust;
-		what3 += "?Q.cb=" + Math.floor(Date.now()/1000/cb)*cb;
+		what3 += "?Q.cb=" + Math.floor(Date.now()/cb)*cb;
 	}
 	parts = what3.split('?');
 	if (parts.length > 2) {
@@ -8961,21 +8986,22 @@ Q.formPost.counter = 0;
  * @param {Function} callback
  */
 Q.updateUrls = function(callback) {
+	var storage = Q.Storage;
 	var timestamp, earliest, url, json, ut = Q.cookie('Q_ut');
 	try {
-		var lut = root.localStorage.getItem(Q.updateUrls.timestampKey);
+		var lut = storage.getItem(Q.updateUrls.timestampKey);
 	} catch (e) {}
 	if (ut && !lut) {
 		Q.request('Q/urls/urls/latest.json', [], function (err, result) {
 			Q.updateUrls.urls = result;
 			json = JSON.stringify(Q.updateUrls.urls);
-			root.localStorage.setItem(Q.updateUrls.urlsKey, json);
+			storage.setItem(Q.updateUrls.urlsKey, json);
 			if (timestamp = result['@timestamp']) {
-				root.localStorage.setItem(Q.updateUrls.timestampKey, timestamp);
+				storage.setItem(Q.updateUrls.timestampKey, timestamp);
 				Q.cookie('Q_ut', timestamp);
 			}
 			if (earliest = result['@earliest']) {
-				root.localStorage.setItem(Q.updateUrls.earliestKey, earliest);
+				storage.setItem(Q.updateUrls.earliestKey, earliest);
 			}
 			Q.handle(callback, null, [result, timestamp]);
 		}, {extend: false, cacheBust: 1000, skipNonce: true});
@@ -8993,20 +9019,20 @@ Q.updateUrls = function(callback) {
 			}
 			function _update(result) {
 				try {
-					var urls = JSON.parse(root.localStorage.getItem('Q.updateUrls.urls'));
+					var urls = JSON.parse(storage.getItem(Q.updateUrls.urlsKey));
 				} catch (e) {}
 				if (!Q.isEmpty(urls)) {
 					Q.updateUrls.urls = urls;
 				}
 				Q.extend(Q.updateUrls.urls, 100, result);
 				json = JSON.stringify(Q.updateUrls.urls);
-				root.localStorage.setItem(Q.updateUrls.urlsKey, json);
+				storage.setItem(Q.updateUrls.urlsKey, json);
 				if (timestamp = result['@timestamp']) {
-					root.localStorage.setItem(Q.updateUrls.timestampKey, timestamp);
+					storage.setItem(Q.updateUrls.timestampKey, timestamp);
 					Q.cookie('Q_ut', timestamp);
 				}
 				if (earliest = result['@earliest']) {
-					root.localStorage.setItem(Q.updateUrls.earliestKey, earliest);
+					storage.setItem(Q.updateUrls.earliestKey, earliest);
 				}
 				Q.handle(callback, null, [result, timestamp]);
 			}
@@ -9020,7 +9046,7 @@ Q.updateUrls.urlsKey = 'Q.updateUrls.urls';
 Q.updateUrls.earliestKey = 'Q.updateUrls.earliest';
 Q.updateUrls.timestampKey = 'Q.updateUrls.timestamp';
 try {
-	Q.updateUrls.urls = JSON.parse(root.localStorage.getItem(Q.updateUrls.urlsKey) || "{}");
+	Q.updateUrls.urls = JSON.parse(Q.Storage.getItem(Q.updateUrls.urlsKey) || "{}");
 } catch (e) {}
 
 /**
@@ -10489,7 +10515,7 @@ Q.loadUrl.loading = {};
  * @param {Object} options
  *  If callables is a url, these are the options to pass to Q.loadUrl, if any. Also can include:
  *  @param {boolean} [options.dontReload=false] if this is true and callback is a url matching current url, it is not reloaded
- *  @param {boolean} [options.loadUsingAjax=false] if this is true and callback is a url, it is loaded using Q.loadUrl
+ *  @param {boolean} [options.loadUsingAjax=true] if this is true and callback is a url, it is loaded using Q.loadUrl
  *  @param {Function} [options.externalLoader] when using loadUsingAjax, you can set this to a function to suppress loading of external websites with Q.handle.
  *	Note: this will still not supress loading of external websites done with other means, such as window.location
  *  @param {Object} [options.fields] optional fields to pass with any method other than "get"
@@ -10633,7 +10659,7 @@ Q.loadUrl.loading = {};
 	}
 };
 Q.handle.options = {
-	loadUsingAjax: false,
+	loadUsingAjax: true,
 	externalLoader: null,
 	dontReload: false
 };
