@@ -1171,6 +1171,20 @@ Q.extend = function _Q_extend(target /* [[deep,] [levels,] anotherObject], ... [
 						return ar.indexOf(item) === i;
 					});
 			} else if (Q.isPlainObject(arg)) {
+				// prepend / append for regular numeric arrays
+				if (arg.prepend && Q.isArrayLike(target)) {
+					// ensure numeric array behavior
+					target = [].concat(arg.prepend, target)
+						.filter(function (item, i, ar) {
+							return ar.indexOf(item) === i;
+						});
+				}
+				if (arg.append && Q.isArrayLike(target)) {
+					target = [].concat(target, arg.append)
+						.filter(function (item, i, ar) {
+							return ar.indexOf(item) === i;
+						});
+				}
 				// keyed diff semantics
 				if (arg.replace) {
 					target = Q.copy(arg.replace);
@@ -5046,7 +5060,7 @@ function _loadToolScript(toolElement, callback, shared, parentId, options, white
 				typeof toolConstructor !== 'string'
 				&& !(Q.isPlainObject(toolConstructor) && toolConstructor.js
 			)))) {
-				toolConstructor = function () {
+				toolConstructor = _qtc[toolName] = function () {
 					log("Missing tool constructor for " + toolName);
 				}; 
 				Q.Tool.onLoadedConstructor(toolName)
@@ -6275,10 +6289,10 @@ Q.trigger = function _Q_trigger(eventName, element, args) {
  *  on container elements.
  *  If a non-element is passed here (such as null, or a DOMEvent)
  *  then this defaults to the document element.
- * @param {Boolean} [force] Pass true here to handle Q.onLayout events
- *   even if ResizeObserver was added
+ * @param {Boolean} [skipIfObserved] Pass true here to skip Q.onLayout events
+ *  for elements on which ResizeObserver was added
  */
-Q.layout = function _Q_layout(element, force) {
+Q.layout = function _Q_layout(element, skipIfObserved) {
 	if (!(element instanceof Element)) {
 		element = null;
 	}
@@ -6287,7 +6301,7 @@ Q.layout = function _Q_layout(element, force) {
 			var event = _layoutEvents[i];
 
 			// return if ResizeObserver defined on this element
-			if (!force && _layoutObservers[i]) {
+			if (skipIfObserved && _layoutObservers[i]) {
 				return;
 			}
 
@@ -8057,7 +8071,9 @@ Q.activate = function _Q_activate(elem, options, callback, internal) {
 	shared.pipe.add(shared.waitingForTools, 1, _activated)
 		.run();
 		
-	Q.Tool.beingActivated = ba;
+	if (Q.typeOf(elem) === 'Q.Tool') {
+		Q.Tool.beingActivated = ba;
+	}
 	
 	return promise;
 	
