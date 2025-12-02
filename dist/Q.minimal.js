@@ -5337,7 +5337,11 @@ Q.Response.processStylesheets = function Q_Response_loadStylesheets(response, ca
 			var key = slotName + '\t' + stylesheet.href + '\t' + stylesheet.media;
 			var elem = Q.addStylesheet(
 				stylesheet.href, stylesheet.media,
-				slotPipe.fill(key), { slotName: slotName, returnAll: false }
+				slotPipe.fill(key), { 
+					slotName: slotName, 
+					returnAll: false,
+					onError: slotPipe.fill(key)
+				}
 			);
 			if (elem) {
 				stylesheets.push(elem);
@@ -5395,6 +5399,9 @@ Q.Response.processMetas = function Q_Response_processMetas(response) {
 	for (var slotName in response.metas) {
 		Q.each(response.metas[slotName], function (i) {
 			var metaData = this;
+			if (!metaData.name || !metaData.value) {
+				return;
+			}
 			var metas = document.querySelectorAll("meta[" + metaData.name + "='" + metaData.value + "']");
 			var found = false;
 			Q.each(metas, function (j) {
@@ -5451,7 +5458,8 @@ Q.Response.processScripts = function Q_Response_processScripts(response, callbac
 		var elem = Q.addScript(
 			response.scripts[slotName], slotPipe.fill(slotName), {
 			ignoreLoadingErrors: options.ignoreLoadingErrors,
-			returnAll: false
+			returnAll: false,
+			onError: slotPipe.fill(slotName)
 		});
 		if (elem) {
 			newScripts[slotName] = elem;
@@ -6297,7 +6305,7 @@ Q.layout = function _Q_layout(element, skipIfObserved) {
 		element = null;
 	}
 	Q.each(_layoutElements, function (i, e) {
-		if (!element || element.contains(e)) {
+		if (!element || (element.contains(e) && element !== e) ) {
 			var event = _layoutEvents[i];
 
 			// return if ResizeObserver defined on this element
@@ -7289,7 +7297,7 @@ try {
  * @param {Boolean} [options.duplicate] if true, adds script even if one with that src was already loaded
  * @param {Boolean} [options.querystringMatters] if true, then different querystring is considered as different, even if duplicate option is false
  * @param {Boolean} [options.skipIntegrity] if true, skips adding "integrity" attribute even if one can be calculated
- * @param {Boolean} [options.onError] optional function that may be called in newer browsers if the script fails to load. Its this object is the script tag.
+ * @param {Boolean} [options.onError] optional function that may be called in newer browsers if the script fails to load. Its this object is the script element.
  * @param {Boolean} [options.ignoreLoadingErrors] If true, ignores any errors in loading scripts.
  * @param {Boolean} [options.container] An element to which the stylesheet should be appended (unless it already exists in the document).
  * @param {Boolean} [options.returnAll] If true, returns all the script elements instead of just the new ones
@@ -7351,6 +7359,10 @@ Q.addScript = function _Q_addScript(src, onload, options) {
 
 	function _onload() {
 		Q.addScript.loaded[src2] = true;
+		if (root.jQuery && !Q.onJQuery.occurred) {
+			Q.onJQuery.handle(root.jQuery, [root.jQuery]);
+		}
+		Q.jQueryPluginPlugin();
 		onload();
 	}
 
@@ -7587,25 +7599,6 @@ Q.require = function (src, callback, synchronously, once) {
 
 var _exports = {};
 
-/**
- * Adds a reference to a stylesheet, if it's not already there
- * @static
- * @method addStylesheet
- * @param {String} href
- * @param {String} media
- * @param {Function} onload
- * @param {Object} [options]
- *  Optional. A hash of options, including options for Q.url() and these:
- * @param {Boolean} [options.slotName] The slot name to which the stylesheet should be added, used to control the order they're applied in.
- *  Do not use together with container option.
- * @param {HTMLElement} [options.container] An element to which the stylesheet should be appended (unless it already exists in the document)
- *  Although this won't result in valid HTML, all browsers support it, and it enables the CSS to later be easily removed at runtime.
- * @param {Boolean} [options.ignoreLoadingErrors=false] If true, ignores any errors in loading scripts.
- * @param {Boolean} [options.querystringMatters] if true, then different querystring is considered as different, even if duplicate option is false
- * @param {Boolean} [options.skipIntegrity] if true, skips adding "integrity" attribute even if one can be calculated
- * @param {Boolean} [options.returnAll=false] If true, returns all the link elements instead of just the new ones
- * @return {Array} Returns an aray of LINK elements
- */
 Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 
 	function onload2(e) {
@@ -7652,7 +7645,7 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 	} else if (Q.isPlainObject(media) && !(media instanceof Q.Event)) {
 		options = media; media = null;
 	}
-	var o = Q.extend({}, Q.addScript.options, options);
+	var o = Q.extend({}, Q.addStylesheet.options, options);
 	if (!o.slotName && Q.Tool.beingActivated) {
 		var n = Q.Tool.names[Q.Tool.beingActivated.name];
 		if (n) {
@@ -7686,7 +7679,7 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 		return false;
 	}
 	o.info = {};
-	href = Q.url(href, null, options);
+	href = Q.url(href, null, o);
 	var href2 = href.split('?')[0];
 	
 	if (!o.querystringMatters && Q.addStylesheet.loaded[href2]) {
@@ -7706,6 +7699,16 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 		if ((m && m !== media) || !h || h.split('?')[0] !== href2) {
 			continue;
 		}
+
+		if (Q.addStylesheet.loaded[href2] === false) {
+			if (o.ignoreLoadingErrors) {
+				_onload();
+			} else if (o.onError) {
+				o.onError.call(e);
+			}
+			return o.returnAll ? e : false;
+		}
+
 		// A link element with this media and href is already found in the document.
 		// Move the element to the right container if necessary
 		// (This may change the order in which stylesheets are applied).
@@ -7743,9 +7746,11 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 			Q.addStylesheet.onErrorCallbacks[href2] = [];
 		}
 		Q.addStylesheet.onLoadCallbacks[href2].push(onload);
+
 		if (o.onError) {
 			Q.addStylesheet.onErrorCallbacks[href2].push(o.onError);
 		}
+
 		if (!e.wasProcessedByQ) {
 			if (Q.info.isAndroidStock) {
 				setTimeout(function () { // it doesn't support onload
@@ -7772,7 +7777,15 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 		}
 	}
 	Q.addStylesheet.added[href] = true;
+
 	Q.addStylesheet.onLoadCallbacks[href2] = [onload];
+	if (!Q.addStylesheet.onErrorCallbacks[href2]) {
+		Q.addStylesheet.onErrorCallbacks[href2] = [];
+	}
+	if (o.onError) {
+		Q.addStylesheet.onErrorCallbacks[href2].push(o.onError);
+	}
+
 	link.onload = onload2;
 	link.onreadystatechange = onload2; // for IE
 	link.setAttribute('href', href);
@@ -7799,7 +7812,6 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 	// https://developer.mozilla.org/en-US/docs/Web/HTML/Element/link#Browser_compatibility
 	return link;
 };
-
 
 Q.addStylesheet.onLoadCallbacks = {};
 Q.addStylesheet.onErrorCallbacks = {};

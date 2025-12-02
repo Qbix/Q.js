@@ -106,7 +106,7 @@ Q.text = {
 			"playing": "Playing",
 			"recorded": "Recorded",
 			"clip": "clip",
-			"okrupload": "Or Upload",
+			"orupload": "Or Upload",
 			"usethis": "Use This",
 			"discard": "Discard",
 			"encoding": "Encoding"
@@ -2059,33 +2059,41 @@ Q.timeRemaining = function (timestamp) {
  * Used so you can add 1 to this to move one of the children atop them all.
  * @method zIndexTopmost
  * @static
- * @param {Element} [container=document.body] 
+ * @param {Element} [container=document.body]
  * @param {Function} [filter] By default, filters out elements with Q_click_mask and pointer-events:none
  * @returns Number
  */
 Q.zIndexTopmost = function (container, filter) {
 	container = container || document.body;
 	filter = filter || function (element) {
-		return element.computedStyle().pointerEvents !== 'none'
+		var style = element.computedStyle();
+		return style.pointerEvents !== 'none'
 			&& !element.hasClass('Q_click_mask')
 			&& element.getAttribute('id') !== 'notices_slot';
-	}
-	var topZ = -1;
-	Q.each(container.children, function () {
-		if (!filter(this)) {
-			return;
-		}
-		var z = parseInt(this.computedStyle().zIndex);
-		if (!isNaN(z)) {
-			// if z-index is max allowed, skip this element
-			if (z >= 2147483647) {
+	};
+
+	function getTopZ(el) {
+		var topZ = -1;
+		Q.each(el.children, function () {
+			if (!filter(this)) {
 				return;
 			}
+			var style = this.computedStyle();
+			var z = style.zIndex;
+			if (z === 'auto') {
+				// recurse into children, since stacking may come from them
+				topZ = Math.max(topZ, getTopZ(this));
+			} else {
+				z = parseInt(z);
+				if (!isNaN(z) && z < 2147483647) {
+					topZ = Math.max(topZ, z);
+				}
+			}
+		});
+		return topZ;
+	}
 
-			topZ = Math.max(topZ, z)
-		}
-	});
-	return topZ;
+	return getTopZ(container);
 };
 
 /**
@@ -5446,7 +5454,7 @@ function _loadToolScript(toolElement, callback, shared, parentId, options, white
 		whitelist = whitelist || Q.activate.whitelist;
 		if (className === 'Q_tool'
 		|| className.slice(-5) !== '_tool'
-		|| whitelist && !whitelist[className]) {
+		|| (whitelist && !whitelist[className])) {
 			continue;
 		}
 		toolNames.push(Q.normalize.memoized(className.substring(0, className.length-5)));
@@ -5632,6 +5640,11 @@ Q.Method.load = function (o, k, url, closure) {
 	return new Promise(function (resolve, reject) {
 		Q.require(url, function (exported) {
 			if (exported) {
+				if (o.__loaded) {
+					o = o.__loaded; // in case o was replaced
+				} else if (o.__shim && o.__shim.__loaded) {
+					o = o.__shim.__loaded; // in case o[k] was replaced
+				}
 				var args = closure ? closure() : [];
 				if (!exported.Q_Method_load_executed) {
 					var m = exported.apply(o, args);
@@ -5650,6 +5663,7 @@ Q.Method.load = function (o, k, url, closure) {
 					v[property] = original[property];
 				}
 			}
+			original.__loaded = v;
 			resolve(v);
 			Q.Method.onLoad.handle(o, k, o[k], closure);
 		}, true);
@@ -5693,7 +5707,7 @@ Q.Method.define = function (o, prefix, closure) {
 
 		var method = o[k];
 
-		o[k] = function _Q_Method_shim() {
+		o[k] = method.__shim = function _Q_Method_shim() {
 			var url = Q.url(
 				(method.__options && method.__options.customPath)
 					? method.__options.customPath
@@ -5741,7 +5755,6 @@ Q.Method.define = function (o, prefix, closure) {
 	});
 	return o;
 };
-
 
 /**
  * A Q.Session object represents a session, and implements things like an "expiring" dialog
@@ -5837,7 +5850,11 @@ Q.Response.processStylesheets = function Q_Response_loadStylesheets(response, ca
 			var key = slotName + '\t' + stylesheet.href + '\t' + stylesheet.media;
 			var elem = Q.addStylesheet(
 				stylesheet.href, stylesheet.media,
-				slotPipe.fill(key), { slotName: slotName, returnAll: false }
+				slotPipe.fill(key), { 
+					slotName: slotName, 
+					returnAll: false,
+					onError: slotPipe.fill(key)
+				}
 			);
 			if (elem) {
 				stylesheets.push(elem);
@@ -5954,7 +5971,8 @@ Q.Response.processScripts = function Q_Response_processScripts(response, callbac
 		var elem = Q.addScript(
 			response.scripts[slotName], slotPipe.fill(slotName), {
 			ignoreLoadingErrors: options.ignoreLoadingErrors,
-			returnAll: false
+			returnAll: false,
+			onError: slotPipe.fill(slotName)
 		});
 		if (elem) {
 			newScripts[slotName] = elem;
@@ -6926,7 +6944,6 @@ Q.init = function _Q_init(options) {
 	}
 	Q.init.called = true;
 	Q.info.baseUrl = Q.info.baseUrl || new URL('.', document.baseURI).href.slice(0, -1);
-	Q.info.imgLoading = Q.info.imgLoading || Q.url('{{Q}}/img/throbbers/loading.gif');
 	Q.loadUrl.options.slotNames = Q.info.slotNames;
 	_startCachingWithServiceWorker();
 	_detectOrientation();
@@ -8043,7 +8060,7 @@ Q.layout = function _Q_layout(element, skipIfObserved) {
 		element = null;
 	}
 	Q.each(_layoutElements, function (i, e) {
-		if (!element || element.contains(e)) {
+		if (!element || (element.contains(e) && element !== e) ) {
 			var event = _layoutEvents[i];
 
 			// return if ResizeObserver defined on this element
@@ -8135,7 +8152,7 @@ Q.url = function _Q_url(what, fields, options) {
 	what3 = Q.interpolateUrl(what2);
 	if (baseUrl && what3.startsWith(baseUrl)) {
 		tail = what3.substring(baseUrl.length+1);
-		tail = targetil.split('?')[0];
+		tail = tail.split('?')[0];
 		info = Q.getObject(tail, Q.updateUrls.urls, '/');
 	} else if (!what3.isUrl()) {
 		info = Q.getObject(what3, Q.updateUrls.urls, '/');
@@ -9064,7 +9081,7 @@ try {
  * @param {Boolean} [options.duplicate] if true, adds script even if one with that src was already loaded
  * @param {Boolean} [options.querystringMatters] if true, then different querystring is considered as different, even if duplicate option is false
  * @param {Boolean} [options.skipIntegrity] if true, skips adding "integrity" attribute even if one can be calculated
- * @param {Boolean} [options.onError] optional function that may be called in newer browsers if the script fails to load. Its this object is the script tag.
+ * @param {Boolean} [options.onError] optional function that may be called in newer browsers if the script fails to load. Its this object is the script element.
  * @param {Boolean} [options.ignoreLoadingErrors] If true, ignores any errors in loading scripts.
  * @param {Boolean} [options.container] An element to which the stylesheet should be appended (unless it already exists in the document).
  * @param {Boolean} [options.returnAll] If true, returns all the script elements instead of just the new ones
@@ -9126,6 +9143,10 @@ Q.addScript = function _Q_addScript(src, onload, options) {
 
 	function _onload() {
 		Q.addScript.loaded[src2] = true;
+		if (root.jQuery && !Q.onJQuery.occurred) {
+			Q.onJQuery.handle(root.jQuery, [root.jQuery]);
+		}
+		Q.jQueryPluginPlugin();
 		onload();
 	}
 
@@ -9379,6 +9400,7 @@ var _exports = {};
  * @param {Boolean} [options.querystringMatters] if true, then different querystring is considered as different, even if duplicate option is false
  * @param {Boolean} [options.skipIntegrity] if true, skips adding "integrity" attribute even if one can be calculated
  * @param {Boolean} [options.returnAll=false] If true, returns all the link elements instead of just the new ones
+ * @param {Function} [options.onError] optional function that may be called in newer browsers if the stylesheet fails to load. Its this object is the link element.
  * @return {Array} Returns an aray of LINK elements
  */
 Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
@@ -9408,7 +9430,6 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 			return;
 		}
 		var cb;
-		Q.addStylesheet.loaded[href2] = false;
 		if (Q.addStylesheet.onErrorCallbacks[href2]) {
 			while ((cb = Q.addStylesheet.onErrorCallbacks[href2].shift())) {
 				cb.call(this);
@@ -9427,7 +9448,7 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 	} else if (Q.isPlainObject(media) && !(media instanceof Q.Event)) {
 		options = media; media = null;
 	}
-	var o = Q.extend({}, Q.addScript.options, options);
+	var o = Q.extend({}, Q.addStylesheet.options, options);
 	if (!o.slotName && Q.Tool.beingActivated) {
 		var n = Q.Tool.names[Q.Tool.beingActivated.name];
 		if (n) {
@@ -9461,7 +9482,7 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 		return false;
 	}
 	o.info = {};
-	href = Q.url(href, null, options);
+	href = Q.url(href, null, o);
 	var href2 = href.split('?')[0];
 	
 	if (!o.querystringMatters && Q.addStylesheet.loaded[href2]) {
@@ -9481,6 +9502,16 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 		if ((m && m !== media) || !h || h.split('?')[0] !== href2) {
 			continue;
 		}
+
+		if (Q.addStylesheet.loaded[href2] === false) {
+			if (o.ignoreLoadingErrors) {
+				_onload();
+			} else if (o.onError) {
+				o.onError.call(e);
+			}
+			return o.returnAll ? e : false;
+		}
+
 		// A link element with this media and href is already found in the document.
 		// Move the element to the right container if necessary
 		// (This may change the order in which stylesheets are applied).
@@ -9518,9 +9549,11 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 			Q.addStylesheet.onErrorCallbacks[href2] = [];
 		}
 		Q.addStylesheet.onLoadCallbacks[href2].push(onload);
+
 		if (o.onError) {
 			Q.addStylesheet.onErrorCallbacks[href2].push(o.onError);
 		}
+
 		if (!e.wasProcessedByQ) {
 			if (Q.info.isAndroidStock) {
 				setTimeout(function () { // it doesn't support onload
@@ -9536,6 +9569,8 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 		return o.returnAll ? e : false; // don't add
 	}
 
+	Q.addStylesheet.loaded[href2] = false; // might be overwritten by true on success
+
 	// Create the stylesheet's tag and insert it into the document
 	var link = document.createElement('link');
 	link.setAttribute('rel', 'stylesheet');
@@ -9547,7 +9582,15 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 		}
 	}
 	Q.addStylesheet.added[href] = true;
+
 	Q.addStylesheet.onLoadCallbacks[href2] = [onload];
+	if (!Q.addStylesheet.onErrorCallbacks[href2]) {
+		Q.addStylesheet.onErrorCallbacks[href2] = [];
+	}
+	if (o.onError) {
+		Q.addStylesheet.onErrorCallbacks[href2].push(o.onError);
+	}
+
 	link.onload = onload2;
 	link.onreadystatechange = onload2; // for IE
 	link.setAttribute('href', href);
@@ -9574,7 +9617,6 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 	// https://developer.mozilla.org/en-US/docs/Web/HTML/Element/link#Browser_compatibility
 	return link;
 };
-
 
 Q.addStylesheet.onLoadCallbacks = {};
 Q.addStylesheet.onErrorCallbacks = {};
@@ -10051,7 +10093,7 @@ Q.activate = function _Q_activate(elem, options, callback, internal) {
 	internal && internal.progress && internal.progress(shared);
 	shared.pipe.add(shared.waitingForTools, 1, _activated)
 		.run();
-		
+	
 	if (Q.typeOf(elem) === 'Q.Tool') {
 		Q.Tool.beingActivated = ba;
 	}
@@ -12293,9 +12335,7 @@ function _listenForVisibilityChange() {
 	});
 	var _isDocumentHidden = null;
 	var _handleOnVisibilityChange = Q.debounce(function (event) {
-		if (_isDocumentHidden === null) {
-			_isDocumentHidden = Q.isDocumentHidden();
-		}
+		_isDocumentHidden = Q.isDocumentHidden();
 		Q.onVisibilityChange.handle.call(document, !_isDocumentHidden, event);
 	}, 10);
 	Q.addEventListener(document, [visibilityChange, 'pause', 'resume', 'resign', 'active'],
@@ -14423,7 +14463,6 @@ Q.onInit.add(function () {
 	} else {
 		Q.onHashChange.set(Q_hashChangeHandler, 'Q.loadUrl');
 	}
-	Q.info.imgLoading = Q.url(Q.info.imgLoading || '{{Q}}/img/throbbers/loading.gif');
 	Q.onReady.set(function () {
 		// renew sockets when reverting to online
 		Q.onOnline.set(Q.Socket.reconnectAll, 'Q.Socket');
@@ -14437,7 +14476,7 @@ Q.onInit.add(function () {
 	var substitutions = Q.interpolateUrl.substitutions;
 	substitutions['baseUrl'] = substitutions[Q.info.app] = substitutions['baseUrl'] || Q.baseUrl();
 	substitutions['Q'] = substitutions['Q'] || Q.pluginBaseUrl('Q');
-	substitutions['currentScriptPath'] = currentScriptPath;
+	substitutions['currentScriptPath'] = substitutions['currentScriptPath'] || currentScriptPath;
 	for (var plugin in Q.plugins) {
 		substitutions[plugin] = Q.pluginBaseUrl(plugin);
 	}
