@@ -7599,6 +7599,27 @@ Q.require = function (src, callback, synchronously, once) {
 
 var _exports = {};
 
+
+/**
+ * Adds a reference to a stylesheet, if it's not already there
+ * @static
+ * @method addStylesheet
+ * @param {String} href
+ * @param {String} media
+ * @param {Function} onload
+ * @param {Object} [options]
+ *  Optional. A hash of options, including options for Q.url() and these:
+ * @param {Boolean} [options.slotName] The slot name to which the stylesheet should be added, used to control the order they're applied in.
+ *  Do not use together with container option.
+ * @param {HTMLElement} [options.container] An element to which the stylesheet should be appended (unless it already exists in the document)
+ *  Although this won't result in valid HTML, all browsers support it, and it enables the CSS to later be easily removed at runtime.
+ * @param {Boolean} [options.ignoreLoadingErrors=false] If true, ignores any errors in loading scripts.
+ * @param {Boolean} [options.querystringMatters] if true, then different querystring is considered as different, even if duplicate option is false
+ * @param {Boolean} [options.skipIntegrity] if true, skips adding "integrity" attribute even if one can be calculated
+ * @param {Boolean} [options.returnAll=false] If true, returns all the link elements instead of just the new ones
+ * @param {Function} [options.onError] optional function that may be called in newer browsers if the stylesheet fails to load. Its this object is the link element.
+ * @return {Array} Returns an aray of LINK elements
+ */
 Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 
 	function onload2(e) {
@@ -7626,7 +7647,6 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 			return;
 		}
 		var cb;
-		Q.addStylesheet.loaded[href2] = false;
 		if (Q.addStylesheet.onErrorCallbacks[href2]) {
 			while ((cb = Q.addStylesheet.onErrorCallbacks[href2].shift())) {
 				cb.call(this);
@@ -7730,7 +7750,21 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 			// the stylesheet was added by someone else (and hopefully loaded)
 			// we can't always know whether to call the error handler
 			// if we got here, we might as well call onload
-			_onload();
+			var errored = false;
+			if (!e.sheet) {
+				errored = true;
+			}
+			try {
+				var rules = link.sheet.cssRules;
+				errored = rules && rules.length === 0;
+			} catch (e) {
+				// SecurityError means cross-origin but loaded successfully
+			}
+			if (errored) {
+				if (o.onError) o.onError.call(e);
+			} else {
+				_onload();
+			}
 			return o.returnAll ? e : false;
 		}
 		if (Q.addStylesheet.loaded[href]
@@ -7765,6 +7799,8 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 		}
 		return o.returnAll ? e : false; // don't add
 	}
+
+	Q.addStylesheet.loaded[href2] = false; // might be overwritten by true on success
 
 	// Create the stylesheet's tag and insert it into the document
 	var link = document.createElement('link');
