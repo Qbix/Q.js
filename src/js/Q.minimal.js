@@ -7750,21 +7750,7 @@ Q.addStylesheet = function _Q_addStylesheet(href, media, onload, options) {
 			// the stylesheet was added by someone else (and hopefully loaded)
 			// we can't always know whether to call the error handler
 			// if we got here, we might as well call onload
-			var errored = false;
-			if (!e.sheet) {
-				errored = true;
-			}
-			try {
-				var rules = link.sheet.cssRules;
-				errored = rules && rules.length === 0;
-			} catch (e) {
-				// SecurityError means cross-origin but loaded successfully
-			}
-			if (errored) {
-				if (o.onError) o.onError.call(e);
-			} else {
-				_onload();
-			}
+			_onload();
 			return o.returnAll ? e : false;
 		}
 		if (Q.addStylesheet.loaded[href]
