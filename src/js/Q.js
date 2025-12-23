@@ -3930,7 +3930,7 @@ Q.getter = function _Q_getter(original, options) {
 		pipe.run();
 	};
 
-	var _waiting = {};
+	var _waiting = gw.waiting = {};
 	if (gw.cache === false) {
 		// no cache
 		gw.cache = null;
