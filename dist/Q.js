@@ -1779,77 +1779,78 @@ Q.chain = function (callbacks) {
 };
 
 /**
- * Returns a promisified version of the given function.
- * If the caller supplies callbacks, the original callback
- * behavior is preserved and no promise is returned.
- * If the caller does not supply callbacks, missing callback
- * positions are backfilled automatically and a Promise is returned.
+ * Wraps a function to support both callback and Promise usage.
+ * If the caller provides any callback functions, the original behavior is used
+ * and no Promise is returned. If no callbacks are provided, success and error
+ * callbacks are inserted at the positions given by callbackIndex, shifting any
+ * existing arguments after those positions. A Promise is returned and resolved
+ * or rejected through the inserted callbacks.
+ *
  * @method promisify
  * @static
- * @param {Function} getter
- *     A function that expects one or more callback arguments.
- *     The callback receives (err, value) in Node-style.
- * @param {Boolean|String} useThis
- *     If true, the promise resolves with "this" instead of the
- *     callback's second argument.
- * @param {Number|Array} callbackIndex
- *     The argument index where the callback is expected.
- *     If an Array is provided, it represents:
- *         [successIndex, errorIndex]
- *     For Cordova-style APIs, pass an array.
- * @return {Function}
- *     A wrapper function. When callbacks are omitted, it
- *     returns a Promise. When callbacks are supplied, it
- *     behaves exactly like the original function.
+ * @param {Function} getter The original function expecting callback arguments.
+ * @param {Boolean|String} useThis Whether to resolve the Promise with `this`.
+ * @param {Number|Array} callbackIndex Position(s) where callbacks should be
+ * inserted. A number inserts a single callback; an array inserts
+ * [successIndex, errorIndex].
+ * @return {Function} A wrapper that returns a Promise when no callbacks are
+ * supplied, or behaves like the original function when callbacks are present.
  */
 Q.promisify = function (getter, useThis, callbackIndex) {
+
 	function _promisifier() {
 		if (!Q.Promise) {
 			return getter.apply(this, arguments);
 		}
+
 		var args = [];
 		var resolve, reject;
 		var userProvidedCallback = false;
+
 		var promise = new Q.Promise(function (r1, r2) {
 			resolve = r1;
 			reject = r2;
 		});
+
 		var cbIndexes = null;
 		if (callbackIndex instanceof Array) {
 			cbIndexes = callbackIndex;
 		} else if (typeof callbackIndex === "number") {
 			cbIndexes = [callbackIndex];
 		}
+
 		Q.each(arguments, function (i, ai) {
 			if (typeof ai === "function") {
 				userProvidedCallback = true;
 			}
 			args.push(ai);
 		});
+
 		if (cbIndexes) {
-			if (args.length <= cbIndexes[0]) {
-				while (args.length <= cbIndexes[0]) {
-					args.push(null);
-				}
-			}
-			if (cbIndexes[1] != null && args.length <= cbIndexes[1]) {
-				while (args.length <= cbIndexes[1]) {
-					args.push(null);
+
+			var j = cbIndexes[0];
+			var k = cbIndexes[1];
+
+			if (j != null) {
+				if (typeof args[j] !== "function") {
+					args.splice(j, 0, function (value) { resolve(value); });
 				}
 			}
 
-			if (cbIndexes[0] != null && typeof args[cbIndexes[0]] !== "function") {
-				args[cbIndexes[0]] = function (value) {
-					resolve(value);
-				};
+			if (k != null) {
+				if (typeof args[k] !== "function") {
+					if (k > j && typeof args[k] !== "function") {
+						args.splice(k, 0, function (err) { reject(err); });
+					} else if (k <= j) {
+						args.splice(k, 0, function (err) { reject(err); });
+					}
+				}
 			}
-			if (cbIndexes[1] != null && typeof args[cbIndexes[1]] !== "function") {
-				args[cbIndexes[1]] = function (err) {
-					reject(err);
-				};
-			}
+
 		} else {
+
 			var ci = (callbackIndex === undefined) ? args.length : callbackIndex;
+
 			if (typeof args[ci] !== "function") {
 				args.splice(ci, 0, function (err, second) {
 					if (err) {
@@ -1860,13 +1861,16 @@ Q.promisify = function (getter, useThis, callbackIndex) {
 				});
 			}
 		}
+
 		try {
 			var result = getter.apply(this, args);
 
 			if (!userProvidedCallback) {
 				return Q.extend(promise, result);
 			}
+
 			return result;
+
 		} catch (e) {
 			if (!userProvidedCallback) {
 				reject(e);
@@ -1875,6 +1879,7 @@ Q.promisify = function (getter, useThis, callbackIndex) {
 			throw e;
 		}
 	}
+
 	return Q.extend(_promisifier, getter);
 };
 
