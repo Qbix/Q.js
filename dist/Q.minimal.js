@@ -1636,108 +1636,96 @@ Q.chain = function (callbacks) {
 };
 
 /**
- * Wraps a function to support both callback and Promise usage.
- * If the caller provides any callback functions, the original behavior is used
- * and no Promise is returned. If no callbacks are provided, success and error
- * callbacks are inserted at the positions given by callbackIndex, shifting any
- * existing arguments after those positions. A Promise is returned and resolved
- * or rejected through the inserted callbacks.
- *
+ * Takes a function and returns a version that returns a promise
  * @method promisify
  * @static
- * @param {Function} getter The original function expecting callback arguments.
- * @param {Boolean|String} useThis Whether to resolve the Promise with `this`.
- * @param {Number|Array} callbackIndex Position(s) where callbacks should be
- * inserted. A number inserts a single callback; an array inserts
- * [successIndex, errorIndex].
- * @return {Function} A wrapper that returns a Promise when no callbacks are
- * supplied, or behaves like the original function when callbacks are present.
+ * @param  {Function} getter A function that takes arguments that include a callback and passes err as the first parameter to that callback, and the value as the second argument.
+ * @param {Boolean|string} useThis whether to resolve the promise with the "this" instead of the second argument.
+ * @param {Number|Array} callbackIndex Which argument the getter is expecting the callback, if any.
+ * @return {Function} a wrapper around the function that returns a promise, extended with the original function's return value if it's an object
  */
-
 Q.promisify = function (getter, useThis, callbackIndex) {
-
 	function _promisifier() {
 		if (!Q.Promise) {
 			return getter.apply(this, arguments);
 		}
-
-		var args = [];
-		var resolve, reject;
-		var userProvidedCallback = false;
-
+		var args = [], resolve, reject, found = false;
 		var promise = new Q.Promise(function (r1, r2) {
 			resolve = r1;
 			reject = r2;
 		});
-
-		var cbIndexes = null;
-		if (callbackIndex instanceof Array) {
-			cbIndexes = callbackIndex;
-		} else if (typeof callbackIndex === "number") {
-			cbIndexes = [callbackIndex];
-		}
-
 		Q.each(arguments, function (i, ai) {
-			if (typeof ai === "function") {
-				userProvidedCallback = true;
-			}
-			args.push(ai);
-		});
-
-		if (cbIndexes) {
-
-			var j = cbIndexes[0];
-			var k = cbIndexes[1];
-
-			if (j != null) {
-				if (typeof args[j] !== "function") {
-					args.splice(j, 0, function (value) { resolve(value); });
-				}
-			}
-
-			if (k != null) {
-				if (typeof args[k] !== "function") {
-					if (k > j && typeof args[k] !== "function") {
-						args.splice(k, 0, function (err) { reject(err); });
-					} else if (k <= j) {
-						args.splice(k, 0, function (err) { reject(err); });
+			if (callbackIndex instanceof Array
+			&& callbackIndex[0] == i) {
+				found = true;
+				args.push(function _onResolve(value) {
+					if (ai instanceof Function) {
+						try {
+							return ai.apply(this, arguments);
+						} catch (e) {
+							return;
+						}
 					}
-				}
-			}
-
-		} else {
-
-			var ci = (callbackIndex === undefined) ? args.length : callbackIndex;
-
-			if (typeof args[ci] !== "function") {
-				args.splice(ci, 0, function (err, second) {
-					if (err) {
-						reject(err);
-					} else {
+					return resolve(value);
+				});
+			} else if (callbackIndex instanceof Array
+			&& callbackIndex[1] == i) {
+				found = true;
+				args.push(function _onReject(value) {
+					if (ai instanceof Function) {
+						try {
+							return ai.apply(this, arguments);
+						} catch (e) {
+							return;
+						}
+						return;
+					}
+					return reject(value);
+				});
+			} else if (!(ai instanceof Function)) {
+				args.push(ai);
+			} else {
+				found = true;
+				args.push(function _promisified(err, second) {
+					if (ai instanceof Function) {
+						try {
+							ai.apply(this, arguments);
+						} catch (e) {
+							// swallow user callback exceptions
+						}
+					}
+					// always resolve on success if caller didn’t handle error
+					if (!err) {
 						resolve(useThis ? this : second);
+					} else if (!(ai instanceof Function)) {
+						reject(err);
 					}
 				});
 			}
+		});
+		if (callbackIndex instanceof Array) {
+			if (callbackIndex[0] && args.length <= callbackIndex[0]) {
+				args[callbackIndex[0]] = resolve;
+			}
+			if (callbackIndex[1] && args.length <= callbackIndex[1]) {
+				args[callbackIndex[1]] = reject;
+			}
+		} else if (!found) {
+			var ci = (callbackIndex === undefined) ? args.length : callbackIndex;
+			args.splice(ci, 0, function _defaultCallback(err, second) {
+				if (err) {
+					return reject(err);
+				}
+				resolve(useThis ? this : second);
+			});
 		}
-
 		try {
-			var result = getter.apply(this, args);
-
-			if (!userProvidedCallback) {
-				return Q.extend(promise, result);
-			}
-
-			return result;
-
+			return Q.extend(promise, getter.apply(this, args));
 		} catch (e) {
-			if (!userProvidedCallback) {
-				reject(e);
-				return promise;
-			}
-			throw e;
+			reject(e);
+			return promise;
 		}
 	}
-
 	return Q.extend(_promisifier, getter);
 };
 
