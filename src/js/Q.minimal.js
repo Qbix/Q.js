@@ -1636,94 +1636,100 @@ Q.chain = function (callbacks) {
 };
 
 /**
- * Takes a function and returns a version that returns a promise
+ * Returns a promisified version of the given function.
+ * If the caller supplies callbacks, the original callback
+ * behavior is preserved and no promise is returned.
+ * If the caller does not supply callbacks, missing callback
+ * positions are backfilled automatically and a Promise is returned.
  * @method promisify
  * @static
- * @param  {Function} getter A function that takes arguments that include a callback and passes err as the first parameter to that callback, and the value as the second argument.
- * @param {Boolean|string} useThis whether to resolve the promise with the "this" instead of the second argument.
- * @param {Number|Array} callbackIndex Which argument the getter is expecting the callback, if any.
- * @return {Function} a wrapper around the function that returns a promise, extended with the original function's return value if it's an object
+ * @param {Function} getter
+ *     A function that expects one or more callback arguments.
+ *     The callback receives (err, value) in Node-style.
+ * @param {Boolean|String} useThis
+ *     If true, the promise resolves with "this" instead of the
+ *     callback's second argument.
+ * @param {Number|Array} callbackIndex
+ *     The argument index where the callback is expected.
+ *     If an Array is provided, it represents:
+ *         [successIndex, errorIndex]
+ *     For Cordova-style APIs, pass an array.
+ * @return {Function}
+ *     A wrapper function. When callbacks are omitted, it
+ *     returns a Promise. When callbacks are supplied, it
+ *     behaves exactly like the original function.
  */
 Q.promisify = function (getter, useThis, callbackIndex) {
 	function _promisifier() {
 		if (!Q.Promise) {
 			return getter.apply(this, arguments);
 		}
-		var args = [], resolve, reject, found = false;
+		var args = [];
+		var resolve, reject;
+		var userProvidedCallback = false;
 		var promise = new Q.Promise(function (r1, r2) {
 			resolve = r1;
 			reject = r2;
 		});
-		Q.each(arguments, function (i, ai) {
-			if (callbackIndex instanceof Array
-			&& callbackIndex[0] == i) {
-				found = true;
-				args.push(function _onResolve(value) {
-					if (ai instanceof Function) {
-						try {
-							return ai.apply(this, arguments);
-						} catch (e) {
-							return;
-						}
-					}
-					return resolve(value);
-				});
-			} else if (callbackIndex instanceof Array
-			&& callbackIndex[1] == i) {
-				found = true;
-				args.push(function _onReject(value) {
-					if (ai instanceof Function) {
-						try {
-							return ai.apply(this, arguments);
-						} catch (e) {
-							return;
-						}
-						return;
-					}
-					return reject(value);
-				});
-			} else if (!(ai instanceof Function)) {
-				args.push(ai);
-			} else {
-				found = true;
-				args.push(function _promisified(err, second) {
-					if (ai instanceof Function) {
-						try {
-							ai.apply(this, arguments);
-						} catch (e) {
-							// swallow user callback exceptions
-						}
-					}
-					// always resolve on success if caller didn’t handle error
-					if (!err) {
-						resolve(useThis ? this : second);
-					} else if (!(ai instanceof Function)) {
-						reject(err);
-					}
-				});
-			}
-		});
+		var cbIndexes = null;
 		if (callbackIndex instanceof Array) {
-			if (callbackIndex[0] && args.length <= callbackIndex[0]) {
-				args[callbackIndex[0]] = resolve;
+			cbIndexes = callbackIndex;
+		} else if (typeof callbackIndex === "number") {
+			cbIndexes = [callbackIndex];
+		}
+		Q.each(arguments, function (i, ai) {
+			if (typeof ai === "function") {
+				userProvidedCallback = true;
 			}
-			if (callbackIndex[1] && args.length <= callbackIndex[1]) {
-				args[callbackIndex[1]] = reject;
-			}
-		} else if (!found) {
-			var ci = (callbackIndex === undefined) ? args.length : callbackIndex;
-			args.splice(ci, 0, function _defaultCallback(err, second) {
-				if (err) {
-					return reject(err);
+			args.push(ai);
+		});
+		if (cbIndexes) {
+			if (args.length <= cbIndexes[0]) {
+				while (args.length <= cbIndexes[0]) {
+					args.push(null);
 				}
-				resolve(useThis ? this : second);
-			});
+			}
+			if (cbIndexes[1] != null && args.length <= cbIndexes[1]) {
+				while (args.length <= cbIndexes[1]) {
+					args.push(null);
+				}
+			}
+
+			if (cbIndexes[0] != null && typeof args[cbIndexes[0]] !== "function") {
+				args[cbIndexes[0]] = function (value) {
+					resolve(value);
+				};
+			}
+			if (cbIndexes[1] != null && typeof args[cbIndexes[1]] !== "function") {
+				args[cbIndexes[1]] = function (err) {
+					reject(err);
+				};
+			}
+		} else {
+			var ci = (callbackIndex === undefined) ? args.length : callbackIndex;
+			if (typeof args[ci] !== "function") {
+				args.splice(ci, 0, function (err, second) {
+					if (err) {
+						reject(err);
+					} else {
+						resolve(useThis ? this : second);
+					}
+				});
+			}
 		}
 		try {
-			return Q.extend(promise, getter.apply(this, args));
+			var result = getter.apply(this, args);
+
+			if (!userProvidedCallback) {
+				return Q.extend(promise, result);
+			}
+			return result;
 		} catch (e) {
-			reject(e);
-			return promise;
+			if (!userProvidedCallback) {
+				reject(e);
+				return promise;
+			}
+			throw e;
 		}
 	}
 	return Q.extend(_promisifier, getter);
