@@ -9440,8 +9440,14 @@ Q.Data = Q.Method.define({
 	digest: new Q.Method(),
 	compress: new Q.Method(),
 	decompress: new Q.Method(),
+	hkdf: new Q.Method(),
+	importKey: new Q.Method(),
+	combineSecrets: new Q.Method(),
+	encrypt: new Q.Method(),
+	decrypt: new Q.Method(),
 	sign: new Q.Method(),
 	verify: new Q.Method(),
+	generateKey: new Q.Method(),
 	generateKey: new Q.Method(),
 	all: function (a, b) {
 		return a && b;
