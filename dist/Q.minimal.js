@@ -1834,6 +1834,7 @@ Q.debounce = function (original, milliseconds, immediate, defaultValue) {
 	};
 };
 
+
 /**
  * Shorthand for creating a new element
  * @param {String} tagName The tag name of the element
@@ -1846,18 +1847,26 @@ Q.element = function (tagName, attributes, elementsToAppend) {
 	var element = document.createElement(tagName);
 	if (attributes) {
 		for (var k in attributes) {
-			element.setAttribute(k, attributes[k]);
+			if (k.startsWith("on") && typeof attributes[k] === "function") {
+				element[k] = attributes[k];
+			} else {
+				element.setAttribute(k, attributes[k]);
+			}
 		}
 	}
 	if (elementsToAppend) {
 		if (typeof elementsToAppend === 'string') {
-			element.innerHTML = elementsToAppend
+			element.innerHTML = elementsToAppend;
 		} else {
 			for (var i=0, l=elementsToAppend.length; i<l; ++i) {
 				var e = elementsToAppend[i];
 				if (e) {
 					if (typeof(e) === 'string') {
-						element.innerHTML += e; // append as HTML, not text
+						var temp = document.createElement("div");
+						temp.innerHTML = e;
+						while (temp.firstChild) {
+							element.appendChild(temp.firstChild);
+						} // append as HTML, not text
 					} else {
 						element.append(e);
 					}
@@ -5122,6 +5131,19 @@ Q.Method = function (properties, options) {
 
 Q.Method.stub = new Q.Method(); // for backwards compatibility
 
+/**
+ * Loads the implementation for method k on object o from url.
+ * Two changes from the original:
+ *
+ * 1. The value returned by exported.apply() is wrapped in Promise.resolve(),
+ *    so method files may return either a function directly (sync, as before)
+ *    or a Promise that resolves to a function (async setup before returning).
+ *
+ * 2. Q_Method_load_executed is set immediately (before the Promise settles)
+ *    so that concurrent calls to the same method while the file is loading
+ *    do not re-execute the factory. The assignment of o[k] is deferred until
+ *    the Promise resolves.
+ */
 Q.Method.load = function (o, k, url, closure) {
 	var original = o[k];
 	return new Promise(function (resolve, reject) {
@@ -5134,25 +5156,34 @@ Q.Method.load = function (o, k, url, closure) {
 				}
 				var args = closure ? closure() : [];
 				if (!exported.Q_Method_load_executed) {
-					var m = exported.apply(o, args);
-					if (typeof m === 'function') {
-						o[k] = m;
-					}
+					// Mark immediately so concurrent shimmed calls don't re-run
 					exported.Q_Method_load_executed = true;
+					// Wrap in Promise.resolve so method files may return a Promise
+					Promise.resolve(exported.apply(o, args)).then(function (m) {
+						if (typeof m === 'function') {
+							o[k] = m;
+						}
+						_finish();
+					}).catch(reject);
+					return; // _finish called asynchronously above
 				}
 			}
-			var v = o[k];
-			if (v === original) {
-				return reject("Q.Method.define: Must override method '" + k + "'");
-			}
-			for (var property in original) {
-				if (!(property in v)) {
-					v[property] = original[property];
+			_finish();
+
+			function _finish() {
+				var v = o[k];
+				if (v === original) {
+					return reject("Q.Method.define: Must override method '" + k + "'");
 				}
+				for (var property in original) {
+					if (!(property in v)) {
+						v[property] = original[property];
+					}
+				}
+				original.__loaded = v;
+				resolve(v);
+				Q.Method.onLoad.handle(o, k, o[k], closure);
 			}
-			original.__loaded = v;
-			resolve(v);
-			Q.Method.onLoad.handle(o, k, o[k], closure);
 		}, true);
 	});
 };
@@ -5165,10 +5196,16 @@ Q.Method.onLoad = new Q.Event();
  * implementations of these methods on demand, from files found at URLs
  * of the form {{prefix}}/{{methodName}}.js . In those files, you can
  * write code such as the following, using constant objects:
- * Q.exports(function (Users, _private) { 
+ * Q.exports(function (Q, _) { 
  *   return function myCoolMethod(options, callback) {
  *     return new Promise(...);
  *   }
+ * });
+ * Or, for async setup before returning the method:
+ * Q.exports(function (Q, _) {
+ *   return someAsyncSetup().then(function () {
+ *     return function myCoolMethod(options, callback) { ... };
+ *   });
  * });
  * When the method is first called, it loads the implementation, and
  * returns a promise that resolves to whatever the implementation returns.
@@ -5176,17 +5213,98 @@ Q.Method.onLoad = new Q.Event();
  * @param {Object} o The object which contains some asynchronous methods
  * @param {String} prefix The part of the URL before "/{{methodName}}.js".
  *  It is passed through Q.url() so it can look like "{{Users}}/js/Users/Web3"
- * @param {Function} closure Optional, this function could reference some
- *  constants in a closure, and return array of these constants, to be used
- *  inside the method implementation in a separate file. The closure constants
- *  can be objects, whose contents are dynamic, but the constants themselves
- *  should never change between invocations of the method. 
+ * @param {Function} [closure] Optional. Returns array of constant objects to
+ *  pass as arguments to each method implementation file after Q.exports().
+ * @param {Object} [options] Optional options object.
+ * @param {String} [options.require] Filename without .js, relative to prefix,
+ *  e.g. "_internal". On the first method call, this file is loaded via
+ *  Q.require, its Q.exports return value is appended to the closure array,
+ *  and the result is cached — loaded at most once per define() call.
+ *  Method files receive it as the last argument after whatever closure() returns.
  * @return {Object} the object sent in the first parameter
  */
-Q.Method.define = function (o, prefix, closure) {
+Q.Method.define = function (o, prefix, closure, options) {
 	if (!prefix) {
 		prefix = Q.currentScriptPath() + '/' + Q.Method.define.options.siblingFolder;
 	}
+
+	// _sharedResult: null = not started, Promise = loading, Array = done (cached exports)
+	var _sharedResult = null;
+
+	/**
+	 * Returns a Promise resolving to the full args array for a method file:
+	 * closure() items (if any) followed by the options.require export (if any).
+	 * @private
+	 */
+	function _resolveArgs() {
+		var base = closure ? closure() : [];
+
+		if (!options || !options.require) {
+			return Promise.resolve(base);
+		}
+
+		// Already loaded — splice directly, no Promise overhead
+		if (Array.isArray(_sharedResult)) {
+			return Promise.resolve(base.concat(_sharedResult));
+		}
+
+		// Already loading — reuse the in-flight Promise
+		if (_sharedResult && typeof _sharedResult.then === 'function') {
+			return _sharedResult.then(function (shared) {
+				return base.concat(shared);
+			});
+		}
+
+		// First call — start the load
+		var requireUrl = Q.url(prefix + '/' + options.require + '.js');
+		_sharedResult = new Promise(function (resolve) {
+			Q.require(requireUrl, function (exported) {
+				// exported is whatever the file passed to Q.exports —
+				// may be a plain object, a function, or a Promise.
+				// We wrap in Promise.resolve so _internal.js may also
+				// do async setup if needed.
+				Promise.resolve(
+					(typeof exported === 'function')
+						? exported()
+						: exported
+				).then(function (result) {
+					var shared = (result !== undefined && result !== null)
+						? [result]
+						: [];
+					_sharedResult = shared; // replace Promise with plain Array
+					resolve(shared);
+				});
+			}, true);
+		});
+
+		return _sharedResult.then(function (shared) {
+			return base.concat(shared);
+		});
+	}
+
+	/**
+	 * Build a shim for one method key k.
+	 * Extracted so force/forget can share the same logic without repetition.
+	 * @private
+	 */
+	function _makeShim(method, k, callName) {
+		return function _Q_Method_shim() {
+			var url = Q.url(
+				(method.__options && method.__options.customPath)
+					? method.__options.customPath
+					: (prefix + '/' + k + '.js')
+			);
+			var t = this, a = arguments;
+			return _resolveArgs().then(function (args) {
+				var augmented = function () { return args; };
+				return Q.Method.load(o, k, url, augmented);
+			}).then(function (f) {
+				var fn = callName ? f[callName] : f;
+				return fn.apply(t, a);
+			});
+		};
+	}
+
 	Q.each(o, function (k) {
 		if (!o.hasOwnProperty(k) || !(o[k] instanceof Q.Method)) {
 			return;
@@ -5194,46 +5312,13 @@ Q.Method.define = function (o, prefix, closure) {
 
 		var method = o[k];
 
-		o[k] = method.__shim = function _Q_Method_shim() {
-			var url = Q.url(
-				(method.__options && method.__options.customPath)
-					? method.__options.customPath
-					: (prefix + '/' + k + '.js')
-			);
-			var t = this, a = arguments;
-			return Q.Method.load(o, k, url, closure)
-				.then(function (f) {
-					return f.apply(t, a);
-				});
-		};
+		o[k] = method.__shim = _makeShim(method, k, null);
 
 		Q.extend(o[k], method);
 
 		if (method.__options.isGetter) {
-			o[k].force = function _Q_Method_force_shim() {
-				var url = Q.url(
-					(method.__options && method.__options.customPath)
-						? method.__options.customPath
-						: (prefix + '/' + k + '.js')
-				);
-				var t = this, a = arguments;
-				return Q.Method.load(o, k, url, closure)
-					.then(function (f) {
-						return f.force.apply(t, a);
-					});
-			};
-			o[k].forget = function _Q_Method_forget_shim() {
-				var url = Q.url(
-					(method.__options && method.__options.customPath)
-						? method.__options.customPath
-						: (prefix + '/' + k + '.js')
-				);
-				var t = this, a = arguments;
-				return Q.Method.load(o, k, url, closure)
-					.then(function (f) {
-						return f.forget.apply(t, a);
-					});
-			};
+			o[k].force  = _makeShim(method, k, 'force');
+			o[k].forget = _makeShim(method, k, 'forget');
 		}
 
 		if (method.__options.cache) {
@@ -5636,66 +5721,225 @@ Q.page = function _Q_page(page, handler, key) {
  * @static
  * @method init
  * @param {Object} options
- * @param {boolean} [options.isLocalFile] set this to true if you are calling Q.init from local file:/// context.
+ * @param {boolean} [options.isLocalFile]
+ * @param {boolean} [options.isCordova]
+ * @return {boolean}
  */
 Q.init = function _Q_init(options) {
 	if (Q.init.called) {
 		return false;
 	}
 	Q.init.called = true;
-	Q.info.baseUrl = Q.info.baseUrl || new URL('.', document.baseURI).href;
-	Q.info.imgLoading = Q.info.imgLoading || Q.url('{{Q}}/img/throbbers/loading.gif');
+
+	Q.info.baseUrl = Q.info.baseUrl || new URL('.', document.baseURI).href.slice(0, -1);
 	Q.loadUrl.options.slotNames = Q.info.slotNames;
+
+	_startCachingWithServiceWorker();
 	_detectOrientation();
+
 	Q.addEventListener(root, 'orientationchange', _detectOrientation);
 	Q.addEventListener(root, 'unload', Q.onUnload.handle);
 	Q.addEventListener(root, 'online', Q.onOnline.handle);
 	Q.addEventListener(root, 'offline', Q.onOffline.handle);
+	Q.addEventListener(root, Q.Visual.focusout, _onPointerBlurHandler);
+
+	// --------------------------------------------------
+	// Readiness checks (EXTENDABLE)
+	// --------------------------------------------------
 	var checks = ["init", "ready"];
+
+	if (Q.ServiceWorker.started) {
+		checks.push("serviceWorker");
+	}
+
+	if (options && options.isCordova) {
+		_isCordova = options.isCordova;
+	}
+
+	if (_isCordova) {
+		var cordova = root.cordova;
+		checks.push("device");
+
+		Q.Visual.preventRubberBand();
+
+		Q.onReady.set(function _Q_handleOpenUrl() {
+			root.handleOpenURL = function (url) {
+				Q.handle(Q.onHandleOpenUrl, Q, [url]);
+			};
+		}, 'Q.handleOpenUrl');
+
+		Q.onReady.set(function _Q_browsertab() {
+			if (!(cordova.plugins && cordova.plugins.browsertabs)) {
+				return;
+			}
+			cordova.plugins.browsertabs.isAvailable(function (result) {
+				delete root.open;
+				root.open = function (url, target, options) {
+					var noopener = options && options.noopener;
+					var w = !noopener && (['_top', '_self', '_parent'].indexOf(target) >= 0);
+					if (!target || w) {
+						Q.handle(url);
+						return root;
+					}
+					if (result) {
+						cordova.plugins.browsertabs.openUrl(url, options, function () {}, function () {});
+					} else if (cordova.InAppBrowser) {
+						cordova.InAppBrowser.open(url, '_system', options);
+					}
+				};
+				root.close = function (url, target, options) {
+					if (result) {
+						cordova.plugins.browsertabs.close(options);
+					} else if (cordova.InAppBrowser) {
+						cordova.InAppBrowser.close();
+					}
+				};
+			}, function () {});
+		}, 'Q.browsertabs');
+	}
+
+	// --------------------------------------------------
+	// Create readiness pipe EARLY
+	// --------------------------------------------------
 	var p = Q.pipe(checks, 1, function _Q_init_pipe_callback() {
 		if (!Q.info) Q.info = {};
+		Q.info.isCordova = !!Q.info.isCordova;
+
 		if (options && options.isLocalFile) {
 			Q.info.isLocalFile = true;
 			Q.handle.options.loadUsingAjax = true;
 		}
+
+		if (Q.info.isCordova && !Q.cookie('Q_cordova')) {
+			Q.cookie('Q_cordova', 'yes');
+		}
+
 		function _ready() {
 			setTimeout(function () {
 				Q.ready();
 			}, 0);
 		}
-		_ready();
+
+		var baseUrl = Q.baseUrl();
+		if (options && options.isLocalFile && !baseUrl.startsWith('file://')) {
+			Q.loadUrl(baseUrl, {
+				ignoreHistory: true,
+				skipNonce: true,
+				handler: function () {},
+				slotNames: ["cordova"]
+			});
+		} else {
+			_ready();
+		}
 	});
 
+	// --------------------------------------------------
+	// Allow onInit to ADD checks
+	// --------------------------------------------------
+	Q.init.addCheck = function (name) {
+		if (checks.indexOf(name) < 0) {
+			checks.push(name);
+		}
+		return p.fill(name);
+	};
+
+	// --------------------------------------------------
+	// DOM ready
+	// --------------------------------------------------
 	function _domReady() {
 		p.fill("ready")();
 	}
 
-	// Bind document ready event
-    document.addEventListener("DOMContentLoaded", _domReady);
-    var _timer = setInterval(function() { // for old browsers
-        if (/loaded|complete/.test(document.readyState)) {
-            clearInterval(_timer);
-            _domReady();
-        }
-    }, 10);
-	
+	if (root.jQuery) {
+		Q.jQueryPluginPlugin();
+		Q.onJQuery.handle(root.jQuery, [root.jQuery]);
+		root.jQuery(document).ready(_domReady);
+	} else {
+		document.addEventListener("DOMContentLoaded", _domReady);
+		var _timer = setInterval(function () {
+			if (/loaded|complete/.test(document.readyState)) {
+				clearInterval(_timer);
+				_domReady();
+			}
+		}, 10);
+	}
+
+	// --------------------------------------------------
+	// Cordova device ready
+	// --------------------------------------------------
+	function _waitForDeviceReady() {
+		if (checks.indexOf("device") < 0) return;
+
+		var handler = Q.once(function () {
+			if (!Q.info) Q.info = {};
+			Q.info.isCordova = true;
+
+			Q.addEventListener(document, "click", function (e) {
+				var t = e.target, s;
+				do {
+					if (
+						t &&
+						t.nodeName === "A" &&
+						t.href &&
+						!t.outerHTML.match(/\Whref=[',"]#[',"]\W/) &&
+						t.href.match(/^https?:\/\//)
+					) {
+						e.preventDefault();
+						s = t.target === "_blank" ? "_blank" : "_system";
+						root.open(t.href, s, "location=no");
+					}
+				} while ((t = t.parentElement));
+			});
+
+			p.fill("device")();
+		});
+
+		if (root.device) {
+			handler();
+		} else {
+			Q.addEventListener(document, 'deviceready', handler, false);
+			var ival = setInterval(function () {
+				if (window.device) {
+					handler();
+					clearInterval(ival);
+				}
+			}, 100);
+		}
+	}
+
+	if (_isCordova) {
+		_waitForDeviceReady();
+	}
+
+	if (Q.ServiceWorker.started) {
+		Q.ServiceWorker.onActive.addOnce(p.fill('serviceWorker'), 'Q');
+	}
+
+	// --------------------------------------------------
+	// BEFORE INIT
+	// --------------------------------------------------
 	Q.handle(Q.beforeInit);
-	
-	// Time to call all the onInit handlers
+
+	// --------------------------------------------------
+	// onInit (may ADD CHECKS)
+	// --------------------------------------------------
 	var p2 = Q.pipe();
 	var waitFor = [];
 	var urls = Q.info.urls;
+
 	if (urls && urls.updateBeforeInit && (urls.caching || urls.integrity)) {
 		waitFor.push('Q.info.urls.updateBeforeInit');
 		Q.updateUrls(p2.fill('Q.info.urls.updateBeforeInit'));
 	}
+
 	if (!Q.isEmpty(Q.getObject('Q.info.text.loadBeforeInit'))) {
 		waitFor.push('loadBeforeInit');
 		Q.Text.get(Q.info.text.loadBeforeInit, p2.fill('loadBeforeInit'));
 	}
+
 	p2.add(waitFor, 1, function () {
 		p.fill('init')();
-		Q.handle(Q.onInit, Q);
+		Q.handle(Q.onInit, Q, [p, checks]);
 	}).run();
 };
 
@@ -6463,16 +6707,14 @@ Q.interpolateUrl = function (url, additional) {
 	if (url.indexOf('{{') < 0) {
 		return url;
 	}
-	var substitutions = {};
-	substitutions['baseUrl'] = substitutions[Q.info.app] = Q.baseUrl();
-	substitutions['Q'] = Q.pluginBaseUrl('Q');
-	substitutions['currentScriptPath'] = currentScriptPath;
-	for (var plugin in Q.plugins) {
-		substitutions[plugin] = Q.pluginBaseUrl(plugin);
-	}
-	url = url.interpolate(substitutions);
+	url = url.interpolate(Q.interpolateUrl.substitutions);
+	url = url.interpolate({currentUrl: location.href});
 	if (additional) {
 		url = url.interpolate(additional);
+	}
+	var parts = url.split('?');
+	if (parts.length > 2) {
+		url = parts.slice(0, 2).join('?') + '&' + parts.slice(2).join('&');
 	}
 	return url;
 };
@@ -7088,6 +7330,18 @@ Q.queryString = function _Q_queryString(fields, keys, returnAsObject, options) {
 	return returnAsObject
 		? result
 		: parts.join("&").replace(/%20/g, "+");
+};
+
+/**
+ * Serialize objects in a canonical way, to match Q_Utils::serialize().
+ * Sorts the keys recursively inside the object, then http-encodes it all.
+ * @param {Object} data
+ * @returns {String}
+ */
+Q.serialize = function _Q_serialize(data) {
+	return Q.queryString(data, true, false, {
+		convertBooleanToInteger: false
+	}).replace('+', '%20');
 };
 
 /**
@@ -9421,8 +9675,34 @@ Q.Template.render = Q.promisify(function _Q_Template_render(name, fields, callba
 	});
 }, false, 2);
 
-Q.leaves = new Q.Method(); 
-Q.Method.define(Q);
+/**
+ * Traverse all the leaves and optionally modify the values
+ * @static
+ * @method leaves
+ * @param {Object|Array|mixed} structure 
+ * @param {Function} callback This will be called for every leaf. 
+ *   It receives the current value of the leaf, and must return a value
+ *   that will be set there (to skip changes, simply return the current value)
+ * @return {Object}
+ */
+Q.leaves = function _Q_leaves(structure, callback) {
+	if (Q.isArrayLike(structure)) {
+		for (var i=0, l=structure.length; i<l; ++i) {
+			structure[i] = Q.leaves(structure[i], callback);
+		}
+	} else if (typeof structure === 'object') {
+		for (var k in structure) {
+			structure[k] = Q.leaves(structure[k], callback);
+		}
+	} else { // we found a scalar leaf
+		structure = callback(structure);
+	}
+	return structure;
+};
+
+Q.sanitize = new Q.Method();
+Q.globalMemoryWalk = new Q.Method();
+Q.Method.define(Q, "{{Q}}/js/methods/Q", function () { return [Q]; });
 
 /**
  * Sandboxed code execution utilities
@@ -9441,6 +9721,7 @@ Q.Data = Q.Method.define({
 	compress: new Q.Method(),
 	decompress: new Q.Method(),
 	hkdf: new Q.Method(),
+	derive: new Q.Method(),
 	importKey: new Q.Method(),
 	combineSecrets: new Q.Method(),
 	encrypt: new Q.Method(),
@@ -9451,13 +9732,83 @@ Q.Data = Q.Method.define({
 	all: function (a, b) {
 		return a && b;
 	},
-	toBase64: function (bytes) {
-		return btoa(String.fromCharCode.apply(String, new Uint8Array(bytes)));
+	toUint8Array: function (bytes) {
+		if (bytes instanceof Uint8Array) {
+			return bytes;
+		}
+		if (bytes instanceof ArrayBuffer) {
+			return new Uint8Array(bytes);
+		}
+		if (
+			typeof Buffer !== 'undefined' &&
+			bytes instanceof Buffer
+		) {
+			return new Uint8Array(
+				bytes.buffer,
+				bytes.byteOffset,
+				bytes.byteLength
+			);
+		}
+		if (Array.isArray(bytes)) {
+			return new Uint8Array(bytes);
+		}
+		throw new Error("Unsupported byte input");
 	},
+	toHex: function (bytes) {
+		var u8 = Q.Data.toUint8Array(bytes);
+
+		var hex = '';
+		for (var i = 0; i < u8.length; i++) {
+			hex += u8[i].toString(16).padStart(2, '0');
+		}
+		return hex;
+	},
+	fromHex: function (hex) {
+		if (typeof hex !== 'string' || (hex.length % 2) !== 0) {
+			throw new Error("Invalid hex string");
+		}
+		// optional strict validation (recommended)
+		if (!/^[0-9a-fA-F]*$/.test(hex)) {
+			throw new Error("Invalid hex characters");
+		}
+		var len = hex.length / 2;
+		var bytes = new Uint8Array(len);
+		for (var i = 0; i < len; i++) {
+			bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+		}
+		return bytes;
+	},
+	toBase64: function (bytes) {
+		var u8 = Q.Data.toUint8Array(bytes);
+		// Node.js fast path
+		if (typeof Buffer !== 'undefined') {
+			return Buffer.from(u8).toString('base64');
+		}
+		// Browser safe (chunked to avoid call stack overflow)
+		var binary = '';
+		var chunkSize = 0x8000;
+		for (var i = 0; i < u8.length; i += chunkSize) {
+			var chunk = u8.subarray(i, i + chunkSize);
+			binary += String.fromCharCode.apply(null, chunk);
+		}
+		return btoa(binary);
+	},
+
 	fromBase64: function (base64) {
-		return Uint8Array.from(atob(base64), function(m) {
-			return m.codePointAt(0)
-		});
+		if (typeof base64 !== 'string') {
+			throw new Error("Base64 must be string");
+		}
+		// Node.js fast path
+		if (typeof Buffer !== 'undefined') {
+			return new Uint8Array(Buffer.from(base64, 'base64'));
+		}
+		var binary = atob(base64);
+		var len = binary.length;
+		var bytes = new Uint8Array(len);
+		for (var i = 0; i < len; i++) {
+			bytes[i] = binary.charCodeAt(i);
+		}
+		return bytes;
 	},
 	blobFromDataURL: function (dataURL) {
 		var arr = dataURL.split(','), mime = arr[0].match(/:(.*?);/)[1],
@@ -9473,8 +9824,39 @@ Q.Data = Q.Method.define({
 			str += Math.random().toString(36).slice(2);
 		}
 		return str.slice(0, count);
+	},
+	variant: function(sessionId, index, segments, seed) {
+		segments = segments || 2;
+		seed = seed || 0xBABE;
+		sessionId = sessionId.replace(/-/g, '');
+		var mixedStr = sessionId + ":" + index + ":" + seed;
+		var hash = 0x811c9dc5;
+		for (var i = 0; i < mixedStr.length; i++) {
+			hash ^= mixedStr.charCodeAt(i);
+			hash = Math.imul(hash, 0x01000193); // Large prime multiplier
+			hash ^= (hash >>> 17);
+			hash = Math.imul(hash, 0x85ebca6b); // MurmurHash3 prime
+			hash ^= (hash >>> 13);
+			hash = Math.imul(hash, 0xc2b2ae35); // Extra entropy spreading
+			hash ^= (hash >>> 16);
+		}
+		return (hash >>> 0) % segments === 0;
 	}
 }, "{{Q}}/js/methods/Q/Data", function() {
+	return [Q];
+});
+
+/**
+ * Higher-level methods for working with our crypto framework and for eip712
+ * @class Q.Crypto
+ */
+Q.Crypto = Q.Method.define({
+	delegate: new Q.Method(),
+	sign: new Q.Method(),
+	verify: new Q.Method(),
+	verifyDelegated: new Q.Method(),
+	internalKeypair: new Q.Method(),
+}, "{{Q}}/js/methods/Q/Crypto", function() {
 	return [Q];
 });
 
