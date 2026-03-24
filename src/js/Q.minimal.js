@@ -3511,6 +3511,148 @@ Q.Exception = function (message, fields) {
 
 Q.Exception.prototype = Error.prototype;
 
+
+/**
+ * For defining method stubs that will be replaced with methods on demand.
+ * Assign this in place of any asynchronous method
+ * that would have a callback and/or return a Promise.
+ * Then call Q.Method.define() on the object containing these.
+ * @class Q.Method
+ * @constructor
+ * @param {Object} properties pass an object with any properties to assign to the
+ *  method function, such as { options: { a: "b" , c: "d" }}
+ * @param {Object} [options] More information about the method
+ * @param {boolean} [options.isGetter] set to true to indicate that the method will be wrapped with Q.getter()
+ * @param {boolean} [options.customPath] set to a custom path to load the method from, instead of the default
+ */
+Q.Method = function (properties, options) {
+	Q.extend(this, properties);
+	this.__options = options || {};
+};
+
+Q.Method.stub = new Q.Method(); // for backwards compatibility
+
+Q.Method.load = function (o, k, url, closure) {
+	var original = o[k];
+	return new Promise(function (resolve, reject) {
+		Q.require(url, function (exported) {
+			if (exported) {
+				if (o.__loaded) {
+					o = o.__loaded; // in case o was replaced
+				} else if (o.__shim && o.__shim.__loaded) {
+					o = o.__shim.__loaded; // in case o[k] was replaced
+				}
+				var args = closure ? closure() : [];
+				if (!exported.Q_Method_load_executed) {
+					var m = exported.apply(o, args);
+					if (typeof m === 'function') {
+						o[k] = m;
+					}
+					exported.Q_Method_load_executed = true;
+				}
+			}
+			var v = o[k];
+			if (v === original) {
+				return reject("Q.Method.define: Must override method '" + k + "'");
+			}
+			for (var property in original) {
+				if (!(property in v)) {
+					v[property] = original[property];
+				}
+			}
+			original.__loaded = v;
+			resolve(v);
+			Q.Method.onLoad.handle(o, k, o[k], closure);
+		}, true);
+	});
+};
+
+Q.Method.onLoad = new Q.Event();
+
+/**
+ * Call this on any object that contains new Q.Method()
+ * in place of some asynchronous methods. It will set up code to load
+ * implementations of these methods on demand, from files found at URLs
+ * of the form {{prefix}}/{{methodName}}.js . In those files, you can
+ * write code such as the following, using constant objects:
+ * Q.exports(function (Users, _private) { 
+ *   return function myCoolMethod(options, callback) {
+ *     return new Promise(...);
+ *   }
+ * });
+ * When the method is first called, it loads the implementation, and
+ * returns a promise that resolves to whatever the implementation returns.
+ * Subsequent calls to the method would simply invoke the implementation.
+ * @param {Object} o The object which contains some asynchronous methods
+ * @param {String} prefix The part of the URL before "/{{methodName}}.js".
+ *  It is passed through Q.url() so it can look like "{{Users}}/js/Users/Web3"
+ * @param {Function} closure Optional, this function could reference some
+ *  constants in a closure, and return array of these constants, to be used
+ *  inside the method implementation in a separate file. The closure constants
+ *  can be objects, whose contents are dynamic, but the constants themselves
+ *  should never change between invocations of the method. 
+ * @return {Object} the object sent in the first parameter
+ */
+Q.Method.define = function (o, prefix, closure) {
+	if (!prefix) {
+		prefix = Q.currentScriptPath() + '/' + Q.Method.define.options.siblingFolder;
+	}
+	Q.each(o, function (k) {
+		if (!o.hasOwnProperty(k) || !(o[k] instanceof Q.Method)) {
+			return;
+		}
+
+		var method = o[k];
+
+		o[k] = method.__shim = function _Q_Method_shim() {
+			var url = Q.url(
+				(method.__options && method.__options.customPath)
+					? method.__options.customPath
+					: (prefix + '/' + k + '.js')
+			);
+			var t = this, a = arguments;
+			return Q.Method.load(o, k, url, closure)
+				.then(function (f) {
+					return f.apply(t, a);
+				});
+		};
+
+		Q.extend(o[k], method);
+
+		if (method.__options.isGetter) {
+			o[k].force = function _Q_Method_force_shim() {
+				var url = Q.url(
+					(method.__options && method.__options.customPath)
+						? method.__options.customPath
+						: (prefix + '/' + k + '.js')
+				);
+				var t = this, a = arguments;
+				return Q.Method.load(o, k, url, closure)
+					.then(function (f) {
+						return f.force.apply(t, a);
+					});
+			};
+			o[k].forget = function _Q_Method_forget_shim() {
+				var url = Q.url(
+					(method.__options && method.__options.customPath)
+						? method.__options.customPath
+						: (prefix + '/' + k + '.js')
+				);
+				var t = this, a = arguments;
+				return Q.Method.load(o, k, url, closure)
+					.then(function (f) {
+						return f.forget.apply(t, a);
+					});
+			};
+		}
+
+		if (method.__options.cache) {
+			o[k].cache = method.__options.cache;
+		}
+	});
+	return o;
+};
+
 /**
  * The root mixin added to all tools.
  * @class Q.Tool
@@ -3917,6 +4059,10 @@ Q.Tool.define = function (name, /* require, */ ctor, defaultOptions, stateKeys, 
 		if (typeof ctor !== 'function') {
 			return;
 		}
+		
+		if (Q.Tool.define.components && typeof ctor === 'function') {
+			Q.Tool.define.component(name, ctor);
+		}
 
 		Q.extend(ctor.prototype, 10, methods);
 		Q.onInit.addOnce(function () {
@@ -3974,6 +4120,12 @@ Q.Tool.define.pattern = function (regexp, defaults, tools) {
 	}
 	return defined;
 };
+
+Q.Tool.define.component = new Q.Method();
+Q.Method.define(Q.Tool.define, "{{Q}}/js/methods/Q/Tool/define", function() {
+    return [Q];
+});
+Q.Tool.define.components = false;
 
 Q.Tool.beingActivated = undefined;
 
@@ -5110,147 +5262,6 @@ Q.Tool.onLoadedConstructor = Q.Event.factory({}, ["", function (name) {
 	return [Q.normalize.memoized(name)];
 }]);
 Q.Tool.onMissingConstructor = new Q.Event();
-
-/**
- * For defining method stubs that will be replaced with methods on demand.
- * Assign this in place of any asynchronous method
- * that would have a callback and/or return a Promise.
- * Then call Q.Method.define() on the object containing these.
- * @class Q.Method
- * @constructor
- * @param {Object} properties pass an object with any properties to assign to the
- *  method function, such as { options: { a: "b" , c: "d" }}
- * @param {Object} [options] More information about the method
- * @param {boolean} [options.isGetter] set to true to indicate that the method will be wrapped with Q.getter()
- * @param {boolean} [options.customPath] set to a custom path to load the method from, instead of the default
- */
-Q.Method = function (properties, options) {
-	Q.extend(this, properties);
-	this.__options = options || {};
-};
-
-Q.Method.stub = new Q.Method(); // for backwards compatibility
-
-Q.Method.load = function (o, k, url, closure) {
-	var original = o[k];
-	return new Promise(function (resolve, reject) {
-		Q.require(url, function (exported) {
-			if (exported) {
-				if (o.__loaded) {
-					o = o.__loaded; // in case o was replaced
-				} else if (o.__shim && o.__shim.__loaded) {
-					o = o.__shim.__loaded; // in case o[k] was replaced
-				}
-				var args = closure ? closure() : [];
-				if (!exported.Q_Method_load_executed) {
-					var m = exported.apply(o, args);
-					if (typeof m === 'function') {
-						o[k] = m;
-					}
-					exported.Q_Method_load_executed = true;
-				}
-			}
-			var v = o[k];
-			if (v === original) {
-				return reject("Q.Method.define: Must override method '" + k + "'");
-			}
-			for (var property in original) {
-				if (!(property in v)) {
-					v[property] = original[property];
-				}
-			}
-			original.__loaded = v;
-			resolve(v);
-			Q.Method.onLoad.handle(o, k, o[k], closure);
-		}, true);
-	});
-};
-
-Q.Method.onLoad = new Q.Event();
-
-/**
- * Call this on any object that contains new Q.Method()
- * in place of some asynchronous methods. It will set up code to load
- * implementations of these methods on demand, from files found at URLs
- * of the form {{prefix}}/{{methodName}}.js . In those files, you can
- * write code such as the following, using constant objects:
- * Q.exports(function (Users, _private) { 
- *   return function myCoolMethod(options, callback) {
- *     return new Promise(...);
- *   }
- * });
- * When the method is first called, it loads the implementation, and
- * returns a promise that resolves to whatever the implementation returns.
- * Subsequent calls to the method would simply invoke the implementation.
- * @param {Object} o The object which contains some asynchronous methods
- * @param {String} prefix The part of the URL before "/{{methodName}}.js".
- *  It is passed through Q.url() so it can look like "{{Users}}/js/Users/Web3"
- * @param {Function} closure Optional, this function could reference some
- *  constants in a closure, and return array of these constants, to be used
- *  inside the method implementation in a separate file. The closure constants
- *  can be objects, whose contents are dynamic, but the constants themselves
- *  should never change between invocations of the method. 
- * @return {Object} the object sent in the first parameter
- */
-Q.Method.define = function (o, prefix, closure) {
-	if (!prefix) {
-		prefix = Q.currentScriptPath() + '/' + Q.Method.define.options.siblingFolder;
-	}
-	Q.each(o, function (k) {
-		if (!o.hasOwnProperty(k) || !(o[k] instanceof Q.Method)) {
-			return;
-		}
-
-		var method = o[k];
-
-		o[k] = method.__shim = function _Q_Method_shim() {
-			var url = Q.url(
-				(method.__options && method.__options.customPath)
-					? method.__options.customPath
-					: (prefix + '/' + k + '.js')
-			);
-			var t = this, a = arguments;
-			return Q.Method.load(o, k, url, closure)
-				.then(function (f) {
-					return f.apply(t, a);
-				});
-		};
-
-		Q.extend(o[k], method);
-
-		if (method.__options.isGetter) {
-			o[k].force = function _Q_Method_force_shim() {
-				var url = Q.url(
-					(method.__options && method.__options.customPath)
-						? method.__options.customPath
-						: (prefix + '/' + k + '.js')
-				);
-				var t = this, a = arguments;
-				return Q.Method.load(o, k, url, closure)
-					.then(function (f) {
-						return f.force.apply(t, a);
-					});
-			};
-			o[k].forget = function _Q_Method_forget_shim() {
-				var url = Q.url(
-					(method.__options && method.__options.customPath)
-						? method.__options.customPath
-						: (prefix + '/' + k + '.js')
-				);
-				var t = this, a = arguments;
-				return Q.Method.load(o, k, url, closure)
-					.then(function (f) {
-						return f.forget.apply(t, a);
-					});
-			};
-		}
-
-		if (method.__options.cache) {
-			o[k].cache = method.__options.cache;
-		}
-	});
-	return o;
-};
 
 /**
  * A Q.Session object represents a session, and implements things like an "expiring" dialog
