@@ -1,6 +1,6 @@
 {
   "name": "@qbixplatform/q.js",
-  "version": "1.0.37",
+  "version": "1.0.38",
   "description": "Q.js, the Qbix JavaScript framework",
 
   "main": "dist/Q.min.js",

@@ -4068,20 +4068,23 @@ Q.Method.load = function (o, k, url, closure) {
 					o = o.__shim.__loaded; // in case o[k] was replaced
 				}
 				var args = closure ? closure() : [];
-				if (!exported.Q_Method_load_executed) {
-					// Mark immediately so concurrent shimmed calls don't re-run
-					exported.Q_Method_load_executed = true;
+				if (exported.Q_Method_load_executed) {
+					_finish();
+				} else {
 					// Wrap in Promise.resolve so method files may return a Promise
 					Promise.resolve(exported.apply(o, args)).then(function (m) {
 						if (typeof m === 'function') {
 							o[k] = m;
 						}
+						// Mark immediately so concurrent shimmed calls don't re-run
+						exported.Q_Method_load_executed = true;
 						_finish();
 					}).catch(reject);
 					return; // _finish called asynchronously above
 				}
+			} else {
+				_finish();
 			}
-			_finish();
 
 			function _finish() {
 				var v = o[k];
