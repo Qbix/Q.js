@@ -6715,7 +6715,7 @@ Q.IndexedDB = {
  */
 Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 	if (!root.indexedDB) {
-		const err = new Error("IndexedDB not supported");
+		var err = new Error("IndexedDB not supported");
 		if (callback) callback(err);
 		return false; // prevents Q.getter from caching failure
 	}
@@ -6742,7 +6742,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 			var hasUpgraded = dbs.some(db => (db.version || 0) > 1);
 			if (!hasUpgraded && !Q.IndexedDB.onEmptyDatabases.occurred) {
 				if (false === Q.handle(Q.IndexedDB.onEmptyDatabases, Q.IndexedDB)) {
-					callback && callback(new Error("Q.IndexedDB.open: aborted due to empty databases"));
+					Q.handle(callback, null, [new Error("Q.IndexedDB.open: aborted due to empty databases")]);
 					return;
 				}
 			}
@@ -6750,26 +6750,26 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 			// ignore indexedDB.databases errors on older browsers
 		}
 
-		const req = version ? indexedDB.open(dbName, version) : indexedDB.open(dbName);
+		var req = version ? indexedDB.open(dbName, version) : indexedDB.open(dbName);
 
 		req.onupgradeneeded = function () {
-			const db = req.result;
+			var db = req.result;
 			if (db.version > 1 && !db.objectStoreNames.contains(storeName) && !triedCreatingStore) {
 				triedCreatingStore = true;
-				const store = db.createObjectStore(storeName, { keyPath: params.keyPath });
-				for (let i = 0; i < indexes.length; ++i) {
-					const [name, keyPath, opts] = indexes[i];
+				var store = db.createObjectStore(storeName, { keyPath: params.keyPath });
+				for (var i = 0; i < indexes.length; ++i) {
+					var [name, keyPath, opts] = indexes[i];
 					store.createIndex(name, keyPath, opts);
 				}
 			}
 		};
 
 		req.onerror = function (e) {
-			callback && callback(e.target.error || new Error("IndexedDB open error"));
+			Q.handle(callback, null, [e.target.error || new Error("IndexedDB open error")]);
 		};
 
 		req.onsuccess = function () {
-			const db = req.result;
+			var db = req.result;
 
 			if (!db._versionchangeAttached) {
 				db._versionchangeAttached = true;
@@ -6804,7 +6804,7 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 
 			if (storeNeedsRecreate) {
 				if (triedCreatingStore || tryCreatingStore) {
-					callback && callback(new Error("Store creation failed after upgrade"), db);
+					Q.handle(callback, null, [new Error("Store creation failed after upgrade"), db]);
 					return;
 				}
 				tryCreatingStore = true;
@@ -6817,16 +6817,16 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 				return;
 			}
 
-			callback && callback(null, db);
+			Q.handle(callback, null, [null, db]);
 		};
 	}
 }, {
 	cache: Q.Cache.document("Q.IndexedDB.open", 10),
 	resolveWithSecondArgument: true,
 	prepare: function (s, p, callback, args) {
-		const getter = this;
-		const [dbName, storeName, params] = args;
-		const db = p[1];
+		var getter = this;
+		var [dbName, storeName, params] = args;
+		var db = p[1];
 
 		try {
 			db.transaction(storeName, 'readonly'); // triggers exception if closed
@@ -6837,9 +6837,9 @@ Q.IndexedDB.open = Q.getter(function (dbName, storeName, params, callback) {
 			}
 			// Connection is closing or closed — refresh manually without infinite loop
 			getter.original(dbName, storeName, params, function (err, newDb) {
-				const key = Q.Cache.key(args);
+				var key = Q.Cache.key(args);
 				if (!err && getter.cache) {
-					const cached = getter.cache.get(key);
+					var cached = getter.cache.get(key);
 					if (cached) {
 						getter.cache.set(key, cached.cbpos, s, arguments);
 					}
