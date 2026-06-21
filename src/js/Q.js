@@ -518,6 +518,10 @@ Elp.computedStyle = function(name, pseudoElement) {
  */
 Elp.scrollingParent = function(skipIfNotOverflowed, direction, includeSelf) {
 	var p = this;
+	var that = this;
+	if (that.Q_scrollingParent) {
+		return that.Q_scrollingParent;
+	}
 	while (includeSelf ? 1 : (p = p.parentElement)) {
 		includeSelf = false;
 		if (typeof p.computedStyle !== 'function') {
@@ -538,10 +542,18 @@ Elp.scrollingParent = function(skipIfNotOverflowed, direction, includeSelf) {
 			(p === document.documentElement || overflow !== 'visible')
 		)) {
 			if (!skipIfNotOverflowed || p.clientHeight < p.scrollHeight) {
+				that.Q_scrollingParent = p;
+				setTimeout(function () {
+					delete that.Q_scrollingParent;
+				}, 1000);
 				return p;
 			}
 		}
 	}
+	that.Q_scrollingParent = p || null;
+	setTimeout(function () {
+		delete that.Q_scrollingParent;
+	}, 1000);
 	return p || null;
 };
 
@@ -4206,6 +4218,9 @@ Q.Method.define = function (o, prefix, closure, options) {
 	 */
 	function _makeShim(method, k, callName) {
 		return function _Q_Method_shim() {
+			if (_Q_Method_shim.__loaded) {
+				return _Q_Method_shim.__loaded.apply(this, arguments);
+			}
 			var url = Q.url(
 				(method.__options && method.__options.customPath)
 					? method.__options.customPath
@@ -9770,14 +9785,22 @@ Q.ServiceWorker = {
 				console.warn("Q.ServiceWorker.start error", error);
 			});
 		});
-		// Listen for cookie updates coming from the Service Worker
-		navigator.serviceWorker.addEventListener('message', event => {
-			const data = event.data || {};
-			if (data.type === 'Set-Cookie-JS' && data.cookies) {
-				for (const [k, v] of Object.entries(data.cookies)) {
-					// Update document.cookie so future page requests carry it
-					document.cookie = encodeURIComponent(k) + '=' + encodeURIComponent(v) + '; path=/';
-					console.log('[SW] Updated cookie from service worker:', k);
+		
+		// Listen for cookie updates coming from the Service Worker. The SW is the
+		// authoritative source; we mirror to sessionStorage so we can rehydrate it
+		// after SW respawns.
+		navigator.serviceWorker.addEventListener('message', function (event) {
+			var data = event.data || {};
+			if (data.type === 'Q.cookie' && data.cookies) {
+				// Optionally also write to document.cookie for first-party contexts
+				// where it works. In third-party ITP contexts these writes may fail
+				// silently, but sessionStorage is the durable layer.
+				for (var k in data.cookies) {
+					if (!data.cookies.hasOwnProperty(k)) continue;
+					try {
+						document.cookie = encodeURIComponent(k) + '=' +
+							encodeURIComponent(data.cookies[k]) + '; path=/';
+					} catch (e) {}
 				}
 			}
 		});
@@ -13710,14 +13733,18 @@ Q.Visual = Q.Pointer = {
 			}
 			div.removeClass('Q_touchlabel_show');
 		}, 'Q.Visual.activateTouchlabels');
-		var _scrollLeft, _scrollTop;
-		Q.addEventListener(element, 'pointerdown pointermove', function (e) {
-			var p = e.target.scrollingParent() || document.body;
+		var _scrollLeft, _scrollTop, _pointerIsDown;
+		Q.addEventListener(element, 'pointerdown pointerup pointermove', function (e) {
+			var p;
 			if (e.type === 'pointerdown') {
+				p = e.target.scrollingParent() || document.body;
 				_scrollLeft = p.scrollLeft;
 				_scrollTop = p.scrollTop;
-			} else if (_scrollLeft !== p.scrollLeft
-			        || _scrollTop !== p.scrollTop) {
+				_pointerIsDown = true;
+			} else if (e.type === 'pointerup') {
+				_pointerIsDown = false;
+			} else if (_pointerIsDown && p && (_scrollLeft !== p.scrollLeft || _scrollTop !== p.scrollTop)) {
+				p = e.target.scrollingParent() || document.body;
 				div.removeClass('Q_touchlabel_show');
 				return;
 			}
@@ -14278,6 +14305,57 @@ Q.Intl = {
 		}
 		return result;
 	}
+};
+
+/**
+ * Q.Speech facilitates speech recognition
+ * @class Q.Speech
+ * @constructor
+ * @param {String} url the url of the audio to load
+ * @param {HTMLElement} container html element to insert audio to
+ * @param {object} attributes json object with attributes to apply to audio element
+ */
+/**
+ * @class Q.Speech
+ */
+Q.Speech = Q.Speech || {};
+Q.Speech.Recognition = Q.Speech.Recognition || {};
+
+// Shared events
+Q.Speech.Recognition.onStart       = new Q.Event();
+Q.Speech.Recognition.onEnd         = new Q.Event();
+Q.Speech.Recognition.onResult      = new Q.Event();
+Q.Speech.Recognition.onError       = new Q.Event();
+Q.Speech.Recognition.onSpeechStart = new Q.Event();
+Q.Speech.Recognition.onSpeechEnd   = new Q.Event();
+
+// Shared state
+Q.Speech.Recognition._supported   = null;   // null = not yet checked
+Q.Speech.Recognition._autoRestart = false;
+Q.Speech.Recognition._rec         = null;   // current SpeechRecognition instance
+Q.Speech.Recognition._impl        = null;   // server-side override (e.g. Deepgram)
+
+// Q.Methods — loaded lazily from js/methods/Q/Speech/Recognition/
+Q.Speech.Recognition.start       = new Q.Method();
+Q.Speech.Recognition.stop        = new Q.Method();
+Q.Speech.Recognition.abort       = new Q.Method();
+Q.Speech.Recognition.implement   = new Q.Method();
+Q.Speech.Recognition.unimplement = new Q.Method();
+
+Q.Method.define(Q.Speech.Recognition, "{{Q}}/js/methods/Q/Speech/Recognition", function () {
+    return [Q, root];
+});
+
+/**
+ * Stop any active recognition cleanly.
+ * Safe to call before Recognition methods have loaded.
+ * @method Q.Speech.stopRecognition
+ * @static
+ */
+Q.Speech.stopRecognition = function () {
+    if (typeof Q.Speech.Recognition.stop === 'function') {
+        Q.Speech.Recognition.stop();
+    }
 };
 
 /**

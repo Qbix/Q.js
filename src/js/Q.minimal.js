@@ -447,6 +447,10 @@ Elp.computedStyle = function(name, pseudoElement) {
  */
 Elp.scrollingParent = function(skipIfNotOverflowed, direction, includeSelf) {
 	var p = this;
+	var that = this;
+	if (that.Q_scrollingParent) {
+		return that.Q_scrollingParent;
+	}
 	while (includeSelf ? 1 : (p = p.parentElement)) {
 		includeSelf = false;
 		if (typeof p.computedStyle !== 'function') {
@@ -467,10 +471,18 @@ Elp.scrollingParent = function(skipIfNotOverflowed, direction, includeSelf) {
 			(p === document.documentElement || overflow !== 'visible')
 		)) {
 			if (!skipIfNotOverflowed || p.clientHeight < p.scrollHeight) {
+				that.Q_scrollingParent = p;
+				setTimeout(function () {
+					delete that.Q_scrollingParent;
+				}, 1000);
 				return p;
 			}
 		}
 	}
+	that.Q_scrollingParent = p || null;
+	setTimeout(function () {
+		delete that.Q_scrollingParent;
+	}, 1000);
 	return p || null;
 };
 
@@ -3693,6 +3705,9 @@ Q.Method.define = function (o, prefix, closure, options) {
 	 */
 	function _makeShim(method, k, callName) {
 		return function _Q_Method_shim() {
+			if (_Q_Method_shim.__loaded) {
+				return _Q_Method_shim.__loaded.apply(this, arguments);
+			}
 			var url = Q.url(
 				(method.__options && method.__options.customPath)
 					? method.__options.customPath
