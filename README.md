@@ -6,8 +6,8 @@ Size: ~40KB (Minified + GZipped), [compare to other frameworks](https://gist.git
 How to use: copy contents of `dist` into your project, and then include it like this:
 | File Type | Code to Use |
 |------------|-------------|
-|`.html` files| `<script type="module">import { Q } from 'https://unpkg.com/@qbixplatform/q.js@1.0.16/dist/Q.js</script>`|
-|`.js` or `.ts` files|`import Q from 'https://unpkg.com/@qbixplatform/q.js@1.0.17/dist/Q.js';`
+|`.html` files| `<script type="module" src="https://unpkg.com/@qbix/q.js@1.0.2/dist/Q.min.js">`|
+|`.js` or `.ts` files|`import Q from 'https://unpkg.com/@qbix/q.js@1.0.2/dist/Q.min.js';`
 |<img src="https://github.com/user-attachments/assets/ba3df93e-0cd8-4189-93fc-11947b63b684" alt="Description" width="100" height="87"> | Full documentation here: https://qbix.com/platform/guide/javascript |
 
 This is part of the much larger full-stack [Qbix Platform](https://github.com/Qbix/Platform) that contains many pre-built reusable tools, plugins, and requires PHP and Node.js on the back-end. If you want to build an entire full-stack social network like Facebook you're well-advised to go with that. But if you just want to use the lightweight front-end core, with your own back-end and other frameworks, then start with this framework here.
