@@ -594,9 +594,10 @@ Elp.removeClass = function (className) {
  * @method addClass
  * @chainable
  * @param {String} className
+ * @param {Boolean} [prepend=false] If true, add the class before existing classes instead of after
  * @return {Element} returns this, for chaining
  */
-Elp.addClass = function (className) {
+Elp.addClass = function (className, prepend) {
 	if (Q.typeOf(className) !== 'string') {
 		className = '';
 	}
@@ -606,10 +607,15 @@ Elp.addClass = function (className) {
 	for (var i=0; i<l; ++i) {
 		var c = classNames[i];
 		if (!c) continue;
-		if (this.classList) {
-			this.classList.add(c);
+		if (prepend) {
+			if (this.hasClass(c)) {
+				this.removeClass(c);
+			}
+			this.className = c + ' ' + this.className;
 		} else {
-			this.removeClass(c);
+			if (this.hasClass(c)) {
+				continue;
+			}
 			this.className += ' ' + c;
 		}
 	}
