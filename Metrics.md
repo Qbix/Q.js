@@ -5,15 +5,15 @@ Lightweight, standalone telemetry for any website. Track scroll depth, section e
 **2,873 lines unminified. Works with or without Q.js. Drop it in and it runs.**
 
 ```html
-<script src="https://unpkg.com/@qbix/q.js/dist/Metrics.js"></script>
+<script src="https://unpkg.com/@qbix/q/dist/Metrics.js"></script>
 <script>
-Metrics.init({ endpoint: '/telemetry', page: document.title });
+Metrics.init();  // sends to invites.to by default
 Metrics.ScrollTracker.init({ sections: 'h2[id]' });
 Metrics.MediaTracker.init();
 </script>
 ```
 
-That's it. You now track scroll depth milestones, which sections users read, how much of each video they watched (unique seconds, not double-counted on seek-back), and page visibility changes. All sent via `sendBeacon` with `fetch` keepalive fallback.
+That's it. Telemetry goes to `https://invites.to/metrics` by default — your domain is identified automatically via `location.origin`. Visit [invites.to/metrics](https://invites.to/metrics) to claim your domain and see your dashboard. Or pass `{endpoint: '/your-own'}` to send data to your own server instead.
 
 ---
 
@@ -157,7 +157,7 @@ Every event payload includes both IDs:
 <h2 id="pricing">Pricing</h2>
 <button id="buy">Buy Now</button>
 
-<script src="https://unpkg.com/@qbix/q.js/dist/Metrics.js"></script>
+<script src="https://unpkg.com/@qbix/q/dist/Metrics.js"></script>
 <script>
 Metrics.init({
     endpoint: '/api/telemetry',

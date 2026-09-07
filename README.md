@@ -6,8 +6,8 @@ Size: ~40KB (Minified + GZipped), [compare to other frameworks](https://gist.git
 How to use: copy contents of `dist` into your project, and then include it like this:
 | File Type | Code to Use |
 |------------|-------------|
-|`.html` files| `<script type="module" src="https://unpkg.com/@qbix/q.js@1.0.2/dist/Q.min.js">`|
-|`.js` or `.ts` files|`import Q from 'https://unpkg.com/@qbix/q.js@1.0.2/dist/Q.min.js';`
+|`.html` files| `<script type="module" src="https://unpkg.com/@qbix/q/dist/Q.min.js">`|
+|`.js` or `.ts` files|`import Q from 'https://unpkg.com/@qbix/q/dist/Q.min.js';`
 |<img src="https://github.com/user-attachments/assets/ba3df93e-0cd8-4189-93fc-11947b63b684" alt="Description" width="100" height="87"> | Full documentation here: https://qbix.com/platform/guide/javascript |
 
 This is part of the much larger full-stack [Qbix Platform](https://github.com/Qbix/Platform) that contains many pre-built reusable tools, plugins, and requires PHP and Node.js on the back-end. If you want to build an entire full-stack social network like Facebook you're well-advised to go with that. But if you just want to use the lightweight front-end core, with your own back-end and other frameworks, then start with this framework here.
@@ -646,17 +646,15 @@ In it, you will define the tools, methods, and other things. Here is an example:
 | **Learning Curve** 📚     | **Simple (declarative, minimal magic)** | Medium-high (hooks, context, JSX) | Medium (directives, reactivity caveats) | High (decorators, DI, RxJS) | Medium |
 | **Best For** ✅            | **High-performance apps, real-time dashboards, low-latency UI, social platforms** | Full-scale apps, large component hierarchies | Small-to-medium apps, good DX | Enterprise-scale apps | Small-to-medium apps, hobby projects |
 
-```
-
 
 # 📊 Metrics.js — Standalone Telemetry
 
 This repo also includes **Metrics.js** — a standalone telemetry library that tracks scroll depth, section engagement, and video/audio playback across 9 embed providers. No dependencies, no build step, works on any website.
 
 ```html
-<script src="https://unpkg.com/@qbix/q.js/dist/Metrics.js"></script>
+<script src="https://unpkg.com/@qbix/q/dist/Metrics.js"></script>
 <script>
-Metrics.init({ endpoint: '/telemetry', page: document.title });
+Metrics.init();  // sends to invites.to by default — or pass {endpoint: '/your-own'}
 Metrics.ScrollTracker.init({ sections: 'h2[id]' });
 Metrics.MediaTracker.init(); // auto-discovers YouTube, Vimeo, SoundCloud, Wistia, JW Player, Dailymotion, Spotify, Twitch, Muse.ai
 </script>
