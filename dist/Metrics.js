@@ -204,20 +204,42 @@ function _bindVisibility() {
 	document.addEventListener('active', handleVisEvent, false);
 }
 
-// ── Unload / bfcache ──
+// ── Unload / bfcache / background-foreground ──
 
 Metrics._unloadBound = false;
+Metrics._bgTime = null;        // when backgrounded
+Metrics._bgCooldown = false;   // suppress rapid duplicate background events
+Metrics._bgCooldownMs = 1000;  // ignore repeated bg events within 1s
 
 function _bindUnload() {
 	if (Metrics._unloadBound) return;
 	Metrics._unloadBound = true;
 
-	// Visibility-based exit (most reliable)
 	Metrics.onVisibilityChange(function (isVisible) {
 		if (!isVisible) {
+			// Backgrounded — send immediately (timers don't fire in bg tabs)
+			// but suppress if we just sent one within the cooldown
+			if (!Metrics._bgCooldown) {
+				Metrics._bgCooldown = true;
+				var elapsed = Math.round((Date.now() - Metrics._startTime) / 1000);
+				Metrics.send('background', { elapsed: elapsed });
+			}
+			Metrics._bgTime = Date.now();
 			_sendUnload();
 		} else {
-			Metrics._unloaded = false; // returned to page
+			// Foregrounded — reset cooldown so next background can fire
+			Metrics._bgCooldown = false;
+			Metrics._unloaded = false;
+			if (Metrics._bgTime) {
+				var awaySeconds = Math.round((Date.now() - Metrics._bgTime) / 1000);
+				Metrics._bgTime = null;
+				// Only report return if they were away > 1 second
+				// (rapid alt-tab = noise, background event already sent but
+				// no point sending a foreground for a sub-second switch)
+				if (awaySeconds > 1) {
+					Metrics.send('foreground', { away: awaySeconds });
+				}
+			}
 		}
 	}, 'Metrics.unload');
 
@@ -230,15 +252,17 @@ function _bindUnload() {
 	window.addEventListener('pageshow', function (e) {
 		if (e.persisted) {
 			Metrics._unloaded = false;
+			Metrics._bgCooldown = false;
+			Metrics.send('foreground', { bfcache: true });
 		}
 	});
 }
 
 function _sendUnload() {
 	if (Metrics._unloaded) return;
-	Metrics._unloaded = true;
 	var elapsed = Math.round((Date.now() - Metrics._startTime) / 1000);
 	Metrics.send('unload:' + elapsed + 's');
+	Metrics._unloaded = true; // set AFTER send, not before
 }
 
 /**
