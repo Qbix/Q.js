@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Metrics.js Test Page</title>
+<style>
+section { height: 600px; padding: 20px; border-bottom: 1px solid #ccc; }
+</style>
+</head>
+<body>
+<section id="hero"><h2 id="hero-heading">Hero Section</h2><p>Welcome to the test page.</p></section>
+<section id="about"><h2 id="about-heading">About Section</h2><p>About content here.</p></section>
+<section id="features"><h2 id="features-heading">Features Section</h2><p>Features content here.</p></section>
+<section id="pricing"><h2 id="pricing-heading">Pricing Section</h2><p>Pricing content here.</p></section>
+<section id="faq"><h2 id="faq-heading">FAQ Section</h2><p>FAQ content here.</p></section>
+
+<script src="../dist/Metrics.js"></script>
+<script>
+// Intercept send for testing
+window.__metricsEvents = [];
+var _origSend = Metrics.send;
+Metrics.send = function (label, data) {
+    window.__metricsEvents.push({ label: label, data: data, t: Date.now() });
+};
+
+Metrics.init({
+    endpoint: 'https://test.example.com/telemetry',
+    page: 'Test Page'
+});
+
+Metrics.ScrollTracker.init({
+    sections: 'h2[id]',
+    debounce: 200,
+    initDelay: 100,
+    depthMilestones: [25, 50, 75, 100]
+});
+
+window.__metricsReady = true;
+</script>
+</body>
+</html>

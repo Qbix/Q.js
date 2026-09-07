@@ -648,3 +648,31 @@ In it, you will define the tools, methods, and other things. Here is an example:
 
 ```
 
+
+# 📊 Metrics.js — Standalone Telemetry
+
+This repo also includes **Metrics.js** — a standalone telemetry library that tracks scroll depth, section engagement, and video/audio playback across 9 embed providers. No dependencies, no build step, works on any website.
+
+```html
+<script src="https://unpkg.com/@qbix/q.js/dist/Metrics.js"></script>
+<script>
+Metrics.init({ endpoint: '/telemetry', page: document.title });
+Metrics.ScrollTracker.init({ sections: 'h2[id]' });
+Metrics.MediaTracker.init(); // auto-discovers YouTube, Vimeo, SoundCloud, Wistia, JW Player, Dailymotion, Spotify, Twitch, Muse.ai
+</script>
+```
+
+Unique features:
+- **Watched seconds** — tracks unique seconds of video/audio covered, not just total playback. Seeking back and replaying doesn't inflate the number.
+- **Section engagement** — knows which heading the user is actually reading, not just how far they scrolled.
+- **Persistent visitor ID** — `localStorage` with `sessionStorage` fallback. ITP-safe because it's first-party storage.
+- **9 media providers** — auto-detected, APIs loaded on demand, no configuration needed.
+- **Zero Q.js dependency** — works completely standalone. But if Q.js is loaded, Metrics automatically gains CSRF tokens, `Q.Page` SPA tracking, `Q/tabs` and `Q/columns` auto-hooks, and debounced server-side state updates.
+
+👉 **[Full Metrics.js documentation →](Metrics.md)**
+
+## From Metrics.js to the Qbix Platform
+
+Metrics.js is the lightweight entry point. For the full server-side stack — visit attribution, referral chain walking, multi-level commissions, real-time WebSocket updates, and per-component Merkle-tree cache invalidation — install the [Qbix Platform](https://github.com/Qbix/Platform) with the Metrics plugin.
+
+The platform includes a high-performance [webserver](https://github.com/Qbix/webserver) (Cosmopolitan C binary) that maintains a Merkle tree of rendered component hashes. When data changes, only the affected components re-render — not the whole page. Combined with static site generation for CDN caching and `Streams/check` for per-stream change detection over WebSocket, you get sub-second updates with near-zero server load. No PHP required for serving — the webserver handles everything.

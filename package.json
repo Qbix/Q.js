@@ -1,12 +1,26 @@
 {
-  "name": "@qbix/q.js",
+  "name": "@qbix/q",
   "version": "1.0.4",
   "description": "Q.js, the Qbix JavaScript framework",
-
   "main": "dist/Q.min.js",
   "files": [
     "dist/"
   ],
   "author": "Qbix Inc.",
-  "license": "MIT"
+  "license": "MIT",
+  "scripts": {
+    "test": "node test/metrics.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Qbix/Q.js.git"
+  },
+  "keywords": [],
+  "bugs": {
+    "url": "https://github.com/Qbix/Q.js/issues"
+  },
+  "homepage": "https://github.com/Qbix/Q.js#readme",
+  "devDependencies": {
+    "jsdom": "^30.0.1"
+  }
 }
