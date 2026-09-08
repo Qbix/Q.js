@@ -5950,6 +5950,95 @@ Q.page = function _Q_page(page, handler, key) {
  * @param {boolean} [options.isCordova]
  * @return {boolean}
  */
+/**
+ * Service worker support for the minimal build.
+ *
+ * The minimal build calls _startCachingWithServiceWorker() and reads
+ * Q.ServiceWorker.started and .onActive from Q.init, but neither the function
+ * nor the object was carried over from the full Q.js -- so Q.init() threw
+ * before it finished, and nothing after it ran.
+ *
+ * This is the smallest thing that makes those three call sites correct. It
+ * registers a worker when Q.info.serviceWorkerUrl is set and does nothing
+ * when it is not, which is the normal case for an embedded widget or a
+ * standalone page. Deliberately no cache priming: that is what the full
+ * build's _startCachingWithServiceWorker does, and a minimal build has no
+ * business shipping it.
+ */
+Q.ServiceWorker = {
+
+	/**
+	 * Whether registration was attempted. Q.init pushes a "serviceWorker"
+	 * readiness check when this is true, so it must stay false unless a
+	 * worker is really being registered -- otherwise Q.init waits forever
+	 * for an onActive that will never fire.
+	 */
+	started: false,
+
+	/**
+	 * @event onActive
+	 */
+	onActive: new Q.Event(),
+
+	/**
+	 * Register the service worker at Q.info.serviceWorkerUrl, if there is one.
+	 * @method start
+	 * @param {Function} [callback] receives (worker, registration), or
+	 *   (false) when there is no worker -- both the unsupported and the
+	 *   unconfigured case, which the full build signalled inconsistently
+	 * @param {Object} [options]
+	 */
+	start: function (callback, options) {
+		options = options || {};
+		if (!('serviceWorker' in navigator)) {
+			Q.handle(callback, null, [false]);
+			Q.ServiceWorker.onActive.handle(false);
+			return;
+		}
+		var src = Q.info && Q.info.serviceWorkerUrl;
+		if (!src) {
+			// No worker configured. Signal exactly as the unsupported branch
+			// does. The full build returned true here, and its caller took
+			// that first argument as the worker and called
+			// true.postMessage() -- "worker.postMessage is not a function".
+			Q.handle(callback, null, [false]);
+			Q.ServiceWorker.onActive.handle(false);
+			return;
+		}
+		Q.ServiceWorker.started = true;
+		navigator.serviceWorker.register(src)
+		.then(function (registration) {
+			if (options.update && registration.update) {
+				registration.update();
+			}
+			var worker = registration.active
+				|| registration.waiting
+				|| registration.installing;
+			Q.handle(callback, Q.ServiceWorker, [worker, registration]);
+			Q.ServiceWorker.onActive.handle(worker, registration);
+		})
+		.catch(function (err) {
+			// Registration can fail for reasons the page cannot control --
+			// no HTTPS, a 404 on the script, a scope mismatch. None of them
+			// should stop the rest of Q from initialising, and started must
+			// go back to false or Q.init keeps waiting on a check that will
+			// never be filled.
+			Q.ServiceWorker.started = false;
+			console.warn('Q.ServiceWorker.start:', err && err.message || err);
+			Q.handle(callback, null, [false]);
+			Q.ServiceWorker.onActive.handle(false);
+		});
+	}
+
+};
+
+function _startCachingWithServiceWorker() {
+	// The full build primes the worker's cache with inlined styles and
+	// scripts here. The minimal build has nothing to prime, so this only
+	// registers -- and registers nothing when no URL is configured.
+	Q.ServiceWorker.start(null, { update: true });
+}
+
 Q.init = function _Q_init(options) {
 	if (Q.init.called) {
 		return false;
