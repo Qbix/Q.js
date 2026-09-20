@@ -95,7 +95,7 @@ Metrics._startTime = Date.now();
  * @param {Object} [data] — optional extra data
  */
 Metrics.send = function (label, data) {
-	if (!Metrics._endpoint || Metrics._unloaded) return;
+    if (!Metrics._endpoint) return;  // only check endpoint, not _unloaded
 
 	var payload = {
 		session: Metrics.getSessionId(),
