@@ -95,7 +95,7 @@ Metrics._startTime = Date.now();
  * @param {Object} [data] — optional extra data
  */
 Metrics.send = function (label, data) {
-	if (!Metrics._endpoint || Metrics._unloaded) return;
+	if (!Metrics._endpoint) return;
 
 	var payload = {
 		session: Metrics.getSessionId(),
@@ -265,6 +265,60 @@ function _sendUnload() {
 	Metrics._unloaded = true; // set AFTER send, not before
 }
 
+// ── Outbound link + window.open tracking ──
+
+Metrics._linksBound = false;
+
+function _bindLinks() {
+	if (Metrics._linksBound) return;
+	Metrics._linksBound = true;
+
+	// Intercept clicks on <a> elements that navigate away
+	document.addEventListener('click', function (e) {
+		var a = e.target.closest ? e.target.closest('a[href]') : null;
+		if (!a) return;
+		var href = a.getAttribute('href') || '';
+		if (!href || href.charAt(0) === '#' || href.indexOf('javascript:') === 0) return;
+
+		try {
+			var url = new URL(href, location.href);
+			var isExternal = url.origin !== location.origin;
+			var label = isExternal ? 'outbound' : 'navigate';
+
+			if (isExternal || a.target === '_blank') {
+				Metrics.send(label, {
+					href: url.href,
+					text: (a.textContent || '').trim().slice(0, 100)
+				});
+			} else {
+				Metrics.send(label, {
+					href: url.pathname + url.search + url.hash,
+					text: (a.textContent || '').trim().slice(0, 100)
+				});
+			}
+		} catch (ex) {
+			Metrics.send('click', { href: href });
+		}
+	}, true); // capture phase — fires before preventDefault
+
+	// Intercept window.open
+	var _origOpen = window.open;
+	window.open = function () {
+		var url = arguments[0];
+		if (url) {
+			try {
+				var parsed = new URL(url, location.href);
+				Metrics.send('window.open', {
+					href: parsed.href
+				});
+			} catch (ex) {
+				Metrics.send('window.open', { href: String(url) });
+			}
+		}
+		return _origOpen.apply(this, arguments);
+	};
+}
+
 /**
  * Initialize standalone page tracking (no Q framework needed)
  * @param {Object} options
@@ -274,6 +328,7 @@ function _sendUnload() {
  * @param {String} [options.sessionId] — override session ID
  * @param {Object} [options.extra] — extra data with every event
  * @param {Boolean} [options.trackUnload=true] — send unload beacon
+ * @param {Boolean} [options.skipLinkTracking] — skip outbound link + window.open tracking
  */
 Metrics.init = function (options) {
 	options = options || {};
@@ -287,6 +342,9 @@ Metrics.init = function (options) {
 	if (options.trackUnload !== false) {
 		_bindUnload();
 	}
+	if (options.skipLinkTracking !== true) {
+		_bindLinks();
+	}
 
 	// Context snapshot — sent once with the "loaded" event
 	var ctx = {
@@ -295,7 +353,9 @@ Metrics.init = function (options) {
 		viewport: window.innerWidth + 'x' + window.innerHeight,
 		dpr: window.devicePixelRatio || 1,
 		lang: navigator.language || '',
-		touch: ('ontouchstart' in window) || (navigator.maxTouchPoints > 0)
+		touch: ('ontouchstart' in window) || (navigator.maxTouchPoints > 0),
+		pwa: window.matchMedia('(display-mode: standalone)').matches
+			|| window.navigator.standalone === true
 	};
 	try { ctx.tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
 	try {
@@ -1014,22 +1074,94 @@ function now() { return Date.now(); }
 
 // ── Section Discovery ──
 
+
+
+/**
+ * Extract a meaningful title from an element.
+ * For headings: use the heading text.
+ * For containers: look for a heading child, aria-label, title attr,
+ * data-section-name, or first meaningful text.
+ */
+function extractTitle(el) {
+	var tag = el.tagName.toLowerCase();
+
+	// Headings — just use their text
+	if (/^h[1-6]$/.test(tag)) {
+		return (el.textContent || '').trim();
+	}
+
+	// Explicit name attributes
+	var explicit = el.getAttribute('data-section-name')
+		|| el.getAttribute('data-section')
+		|| el.getAttribute('aria-label')
+		|| el.getAttribute('title');
+	if (explicit) return explicit.trim();
+
+	// <details> — use <summary> text
+	if (tag === 'details') {
+		var summary = el.querySelector('summary');
+		if (summary) return (summary.textContent || '').trim();
+	}
+
+	// Containers — look for first heading child
+	var heading = el.querySelector('h1, h2, h3, h4, h5, h6');
+	if (heading) return (heading.textContent || '').trim();
+
+	// Look for a title-like element
+	var titleEl = el.querySelector('[class*="title"], [class*="header"], legend, caption, label');
+	if (titleEl) return (titleEl.textContent || '').trim();
+
+	// Fallback: first 80 chars of text content
+	return (el.textContent || '').trim().slice(0, 80);
+}
+
 function discoverSections(selector) {
 	var elements = document.querySelectorAll(selector);
 	var result = [];
 	var ordinal = 0;
 	var minH = (state.options && state.options.minSectionHeight) || 0;
+	var seenIds = {};
+
 	for (var i = 0; i < elements.length; i++) {
 		var el = elements[i];
-		if (el.offsetHeight < minH) continue;
-		if (!el.id) {
-			el.id = slugify(el.textContent || '') || ('section-' + ordinal);
+		var tag = el.tagName.toLowerCase();
+
+		// Skip tiny elements (but not headings, which are naturally small)
+		if (!/^h[1-6]$/.test(tag) && el.offsetHeight < minH) continue;
+
+		// Skip nested: if this container has a heading that's also matched,
+		// skip the container to avoid duplicates
+		// UNLESS the container has explicit data-section attr
+		if (!/^h[1-6]$/.test(tag)) {
+			var childHeading = el.querySelector('h1, h2, h3, h4');
+			if (childHeading && elements.length > 0) {
+				if (!el.hasAttribute('data-section')
+					&& !el.hasAttribute('data-track-section')
+					&& !el.hasAttribute('aria-label')) {
+					continue;
+				}
+			}
 		}
+
+		// Generate or use ID
+		var title = extractTitle(el);
+		if (!el.id) {
+			var slug = slugify(title) || ('section-' + ordinal);
+			if (seenIds[slug]) {
+				slug = slug + '-' + ordinal;
+			}
+			el.id = slug;
+		}
+
+		// Avoid duplicate IDs in results
+		if (seenIds[el.id]) continue;
+		seenIds[el.id] = true;
+
 		result.push({
 			el: el, id: el.id,
-			tag: el.tagName.toLowerCase(),
+			tag: tag,
 			ordinal: ordinal++,
-			snippet: snippet(el)
+			snippet: title.slice(0, 80)
 		});
 	}
 	return result;
