@@ -9406,9 +9406,9 @@ Q.nodeUrl.routers = []; // functions returning a custom url
  * @class Q.Template
  * @constructor
  */
-Q.Template = function () {
-
-};
+Q.Template = Q.Method.define({
+	bind: new Q.Method()
+}, "{{Q}}/js/methods/Q/Template", function () { return [Q]; });
 
 Q.Template.collection = {};
 Q.Template.info = {};

@@ -1,188 +1,155 @@
 Q.exports(function (Q) {
-
     /**
-     * Registers a Custom Element (Web Component) for a Q tool.
-     * Only active when Q.Tool.define.components === true.
+     * Register a Custom Element for a Q tool. Hyphenated attributes resolve to
+     * camelCase keys (publisher-id -> publisherId). A schema may instead declare
+     * a nested path (foo-bar -> options.foo.bar).
      *
-     * Equivalent to writing:
-     *   <div class="Q_tool Streams_chat_tool" data-streams-chat='{"publisherId":"NYU"}'></div>
-     * and having Q.activate() find it. The web component syntax is purely a
-     * translation shim — connectedCallback dresses the element and calls Q.activate(this).
-     *
-     * Attribute → option mapping:
-     *   - foo-bar="2"  → nested: options.foo.bar = 2
-     *   - fooBar="2"   → flat if schema declares it, else options.fooBar = 2
-     *   - baz          → true (bare attribute, no value)
-     *
-     * Schema is declared as the last element of stateKeys if it's a plain object:
-     *   stateKeys = ["editable", { count: Q.Types.Integer, visible: Q.Types.Boolean }]
-     * Leaf nodes have a .from(string) method. Branch nodes are plain objects without .from().
-     * Without a schema, automagic inference handles bool/int/float/JSON/string.
-     *
-     * @method Q.Tool.define.component
-     * @param {String} name Tool name e.g. "Streams/chat"
-     * @param {Function} ctor Tool constructor (already registered)
+     * Event attributes such as on-custom-event="App.handlers.changed" require
+     * a matching Q.Event in the tool's default options. Q.extend installs the
+     * dotted handler path on that event; Q.handle resolves it when it fires.
      */
     return function Q_Tool_define_component(name, ctor) {
-        if (typeof customElements === 'undefined') {
-            return;
-        }
+        if (typeof customElements === 'undefined') return;
 
-        // "Streams/chat" -> "streams-chat"
         var tagName = name.toLowerCase().replace(/[/_]/g, '-');
-
-        if (customElements.get(tagName)) {
-            return;
-        }
-
-        // Extract schema from last element of stateKeys if it's a plain object
+        if (customElements.get(tagName)) return;
         var stateKeys = ctor.stateKeys;
-        var schema = null;
-        if (Array.isArray(stateKeys) && stateKeys.length) {
-            var last = stateKeys[stateKeys.length - 1];
-            if (Q.isPlainObject(last)) {
-                schema = last;
+        var last = Array.isArray(stateKeys) && stateKeys[stateKeys.length - 1];
+        var schema = Q.isPlainObject(last) ? last : null;
+        var attrTypeMap = Object.create(null);
+        var attrNameMap = Object.create(null);
+        var eventMap = Object.create(null);
+        if (schema) flattenSchema(schema, []);
+
+        var defaults = ctor.options || {};
+        Object.keys(defaults).forEach(function (key) {
+            if (Q.typeOf(defaults[key]) === 'Q.Event') {
+                eventMap[camelToHyphen(key)] = key;
             }
-        }
+        });
 
-        // attrTypeMap: full-hyphenated-path -> Q.Types.X descriptor
-        // attrNameMap: full-hyphenated-path -> key path array into options
-        var attrTypeMap = {};
-        var attrNameMap = {};
-        if (schema) {
-            _flattenSchema(schema, [], attrTypeMap, attrNameMap);
-        }
-
-        /**
-         * Recursively walk schema. Leaf nodes have .from(), branch nodes don't.
-         * Keys into the maps are the FULL hyphenated path e.g. "foo-bar-baz"
-         * to avoid collisions between keys at different nesting levels.
-         */
-        function _flattenSchema(node, path, typeMap, nameMap) {
-            for (var k in node) {
-                if (!node.hasOwnProperty(k)) continue;
-                var val = node[k];
-                var newPath = path.concat([k]);
-                var hyphenPath = newPath.map(_camelToHyphen).join('-');
-                if (val && typeof val.from === 'function') {
-                    typeMap[hyphenPath] = val;
-                    nameMap[hyphenPath] = newPath;
-                } else if (Q.isPlainObject(val)) {
-                    _flattenSchema(val, newPath, typeMap, nameMap);
-                }
-            }
-        }
-
-        function _camelToHyphen(str) {
-            return str.replace(/([A-Z])/g, function(c) {
+        function camelToHyphen(s) {
+            return s.replace(/([A-Z])/g, function (c) {
                 return '-' + c.toLowerCase();
             });
         }
 
-        /**
-         * Resolve one attribute name+value to { path, value }.
-         * Resolution order:
-         *   1. Full hyphenated path match in schema (e.g. "foo-bar" -> ["foo","bar"])
-         *   2. Hyphen-split into nested path
-         *   3. Single segment: flat key preserving original casing
-         * Bare attribute (no value) -> true, or type.from('') if schema declares it.
-         */
-        function _resolveAttr(attrName, attrValue) {
-            var lower = attrName.toLowerCase();
-            var type = attrTypeMap[lower] || null;
-            var path = attrNameMap[lower] || null;
+        function hyphenToCamel(s) {
+            return s.replace(/-([a-z])/g, function (_, c) {
+                return c.toUpperCase();
+            });
+        }
 
-            if (!path) {
-                var parts = lower.split('-');
-                path = parts.length > 1 ? parts : [attrName];
+        function flattenSchema(node, path) {
+            Object.keys(node).forEach(function (key) {
+                var val = node[key];
+                var next = path.concat(key);
+                var attr = next.map(camelToHyphen).join('-');
+
+                if (val && typeof val.from === 'function') {
+                    attrTypeMap[attr] = val;
+                    attrNameMap[attr] = next;
+                } else if (Q.isPlainObject(val)) {
+                    flattenSchema(val, next);
+                }
+            });
+        }
+
+        function infer(s) {
+            if (s === 'true') return true;
+            if (s === 'false') return false;
+            if (s === 'null') return null;
+            if (s === '') return true;
+            if (/^-?\d+$/.test(s)) return parseInt(s, 10);
+            if (/^-?\d*\.\d+$/.test(s)) return parseFloat(s);
+
+            if (s[0] === '{' || s[0] === '[') {
+                try {
+                    return JSON.parse(s);
+                } catch (e) {}
             }
 
+            return s;
+        }
+
+        function resolve(name, value) {
+            var key = name.toLowerCase();
+            var path = attrNameMap[key]
+                || [key.indexOf('-') < 0 ? key : hyphenToCamel(key)];
+            var optionKey = path.length === 1 ? path[0] : null;
+            var isEvent = optionKey
+                && Q.typeOf(defaults[optionKey]) === 'Q.Event';
+            var type = attrTypeMap[key];
             var converted;
-            if (attrValue === null) {
-                // bare attribute
-                converted = type ? type.from('') : true;
-            } else if (type) {
-                converted = type.from(attrValue);
+
+            if (isEvent) {
+                // Q.extend recognizes this keyed object when its target is a
+                // Q.Event. Q.handle resolves the string when the event fires.
+                converted = {};
+                converted['component:' + key] = value;
             } else {
-                converted = _infer(attrValue);
+                converted = type
+                    ? type.from(value === null ? '' : value)
+                    : value === null ? true : infer(value);
             }
 
-            return { path: path, value: converted };
+            return {
+                path: path,
+                value: converted,
+                event: isEvent
+            };
         }
 
-        /**
-         * Automagic inference when no schema type is declared.
-         * Order: "true"/"false" -> Boolean, integer, float, JSON, String.
-         */
-        function _infer(str) {
-            if (str === 'true')  return true;
-            if (str === 'false') return false;
-            if (str === 'null')  return null;
-            if (str === '')      return true;
-            if (/^-?\d+$/.test(str)) return parseInt(str, 10);
-            if (/^-?\d*\.\d+$/.test(str)) return parseFloat(str);
-            if (str[0] === '{' || str[0] === '[') {
-                try { return JSON.parse(str); } catch(e) {}
-            }
-            return str;
-        }
-
-        /**
-         * Build options object from all non-standard attributes on the element.
-         * Skips: id, class, style, slot, and all data-* except the tool's own.
-         * The tool's own data-* attribute (e.g. data-streams-chat) is parsed as
-         * a raw JSON blob and merged as the base, with individual attrs on top.
-         */
-        function _attrsToOptions(element) {
+        function attrsToOptions(element) {
             var options = {};
-            var skip = { id: 1, 'class': 1, style: 1, slot: 1 };
             var ownDataAttr = 'data-' + tagName;
-            var attrs = element.attributes;
+            var blob = element.getAttribute(ownDataAttr);
 
-            for (var i = 0; i < attrs.length; i++) {
-                var attr = attrs[i];
-                var aName = attr.name;
+            if (blob) {
+                try {
+                    var parsed = JSON.parse(blob);
+                    if (Q.isPlainObject(parsed)) {
+                        Q.extend(options, Q.Tool.options.levels, parsed);
+                    }
+                } catch (e) {}
+            }
 
-                if (skip[aName]) continue;
+            Array.prototype.forEach.call(element.attributes, function (attr) {
+                var key = attr.name;
 
-                // Legacy JSON blob on the tool's own data- attr: merge as base
-                if (aName === ownDataAttr) {
-                    try {
-                        var blob = JSON.parse(attr.value);
-                        if (Q.isPlainObject(blob)) {
-                            Q.extend(options, blob);
-                        }
-                    } catch(e) {}
-                    continue;
+                if (key === 'id'
+                    || key === 'class'
+                    || key === 'style'
+                    || key === 'slot'
+                    || key.slice(0, 5) === 'data-') {
+                    return;
                 }
 
-                // Skip other data-* passthrough attributes
-                if (aName.slice(0, 5) === 'data-') continue;
-
-                var resolved = _resolveAttr(aName, attr.value === '' ? null : attr.value);
+                var resolved = resolve(
+                    key,
+                    attr.value === '' ? null : attr.value
+                );
                 Q.setObject(resolved.path, resolved.value, options);
-            }
+            });
 
             return options;
         }
 
-        // observedAttributes: only schema-declared attrs trigger attributeChangedCallback.
-        // Undeclared attrs are still read at connectedCallback time via _attrsToOptions.
-        var observedAttrNames = Object.keys(attrTypeMap);
-
-        var ntt = name.split('/').join('_');
+        var observed = Object.keys(attrTypeMap).concat(Object.keys(eventMap));
+        var ntt = name.replace(/\//g, '_');
 
         class ToolElement extends HTMLElement {
-
             connectedCallback() {
                 this.classList.add('Q_tool', ntt + '_tool');
-                var options = _attrsToOptions(this);
+
+                var options = attrsToOptions(this);
                 if (!Q.isEmpty(options)) {
                     this.setAttribute(
                         'data-' + tagName,
                         JSON.stringify(options)
                     );
                 }
+
                 Q.activate(this);
             }
 
@@ -193,26 +160,49 @@ Q.exports(function (Q) {
 
             attributeChangedCallback(attrName, oldVal, newVal) {
                 if (oldVal === newVal) return;
-                // Fires only for schema-declared attributes after initial connection.
-                // Before connection, the change will be picked up by connectedCallback.
+
                 var tool = Q.Tool.from(this, name);
                 if (!tool) return;
-                var resolved = _resolveAttr(attrName, newVal === '' ? null : newVal);
-                var update = {};
-                Q.setObject(resolved.path, resolved.value, update);
-                tool.setState(update);
+
+                var resolved = resolve(
+                    attrName,
+                    newVal === '' ? null : newVal
+                );
+
+                if (newVal === null && eventMap[attrName]) {
+                    var active = tool.options[eventMap[attrName]];
+                    if (Q.typeOf(active) === 'Q.Event') {
+                        active.remove('component:' + attrName);
+                    }
+                    return;
+                }
+
+                if (resolved.event) {
+                    var event = tool.options[resolved.path[0]];
+                    if (Q.typeOf(event) !== 'Q.Event') return;
+
+                    var handlerKey = 'component:' + attrName;
+                    event.remove(handlerKey);
+                    event.set(resolved.value[handlerKey], handlerKey);
+                } else {
+                    var update = {};
+                    Q.setObject(resolved.path, resolved.value, update);
+                    tool.setState(update);
+                }
             }
 
             static get observedAttributes() {
-                return observedAttrNames;
+                return observed;
             }
         }
 
         try {
             customElements.define(tagName, ToolElement);
-        } catch(e) {
-            console.warn('Q.Tool: could not register <' + tagName + '>:', e);
+        } catch (e) {
+            console.warn(
+                'Q.Tool: could not register <' + tagName + '>:',
+                e
+            );
         }
     };
-
 });

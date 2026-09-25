@@ -68,6 +68,23 @@ Here is an overview of the main ones:
 | Flow | `Q.chain()`, `Q.getter()`, `Q.batcher()`, `Q.promisify()`, `Q.debounce()` |
 | Helpers | `Q.find()`, `Q.activate()`, `Q.cookie()`, `Q.handle()` |
 
+Unlike JSX, HTMX or AlpineJS, your HTML markup stays standards-compliant, but now can look like:
+```html
+<q-each person="@{page.people}" key="person.id">
+  <p>${index}: @{person.name}</p>
+
+  <q-if test="@{person.vip}">
+    <strong>VIP</strong>
+    <q-else-if person-age=">= 18">
+      <span>Adult</span>
+    </q-else-if>
+    <q-else>
+      <span>Under 18</span>
+    </q-else>
+  </q-if>
+</q-each>
+```
+
 # Overview
 
 ## Main functionality
@@ -195,6 +212,37 @@ Q.batcher(batchFn, options)
 Q.promisify(fn, useThis, callbackIndex)
 Q.debounce(fn, ms)
 ```
+
+## 📄 Pages
+
+The concept of Pages is tied to HTTP resources and URLs in browsers.
+
+`Q.Page` class can be used to manage pages and browser page history, loading and unloading their contents, stylesheets, etc.
+This happens automatically when you call `Q.handle(url)` or `Q.loadUrl(url)`.
+The server-side can send a JSON payload with keys like `scripts`, `stylesheets`, etc. and the framework will
+call `Q.addScript()` and `Q.addStylesheet()` to add any new scripts and stylesheets, and `Q.removeStylesheet()` for any
+stylesheets that are not in the new page.
+
+Pages can be divided into named `slots` (e.g. "navigation", "content") so that only parts of a page are requested from the server.
+The server typically responds with JSON containing `slots`, which is a map of `{slotName: html}` pairs, containing new HTML content.
+Then `Q.replace()` is used on slots that should be replaced, and finally `Q.activate()` is called to activate any new tools.
+
+Here is how you add code to run when a page loads and before it unloads:
+
+```javascript:
+Q.page('Namespace/action', function () {
+  // runs when page is loaded
+  return function () {
+    // runs before page is unloaded
+  };
+});
+```
+
+`Q.Page.onLoad` and `Q.Page.onUnload` are events that occur when pages are loaded an unloaded.
+
+`Q.Page.push()`, `Q.Page.pop()` and `Q.Page.currentUrl` works with browser history. 
+
+More information: https://qbix.com/platform/guide/pages
 
 ## 📝 Templates
 
@@ -364,36 +412,39 @@ When tools are removed, all associated event handlers are removede automaiticall
 
 More information: https://qbix.com/platform/guide/tools
 
-## 📄 Pages
+## 🧩 Components in HTML
 
-While Tools are reusable components, the concept of Pages is tied to HTTP resources and URLs in browsers.
+Set `Q.Tool.define.components = true` before registering tools to give them custom element tags. A tool named `Streams/chat` becomes `<streams-chat>`. Attributes become tool options: `publisher-id` becomes `publisherId`, and `on-custom-event` can attach a handler when `onCustomEvent` is a `Q.Event` in the tool’s defaults.
 
-`Q.Page` class can be used to manage pages and browser page history, loading and unloading their contents, stylesheets, etc.
-This happens automatically when you call `Q.handle(url)` or `Q.loadUrl(url)`.
-The server-side can send a JSON payload with keys like `scripts`, `stylesheets`, etc. and the framework will
-call `Q.addScript()` and `Q.addStylesheet()` to add any new scripts and stylesheets, and `Q.removeStylesheet()` for any
-stylesheets that are not in the new page.
+The `Q/if` and `Q/each` tools let you write conditions, loops, and bindings directly in HTML:
 
-Pages can be divided into named `slots` (e.g. "navigation", "content") so that only parts of a page are requested from the server.
-The server typically responds with JSON containing `slots`, which is a map of `{slotName: html}` pairs, containing new HTML content.
-Then `Q.replace()` is used on slots that should be replaced, and finally `Q.activate()` is called to activate any new tools.
+```html
+<template id="People/vip">
+  <strong>{{person.name}}</strong> has @{person.score} points.
+</template>
 
-Here is how you add code to run when a page loads and before it unloads:
+<q-if test="true">
+  <h2>@{page.title}</h2>
 
-```javascript:
-Q.page('Namespace/action', function () {
-  // runs when page is loaded
-  return function () {
-    // runs before page is unloaded
-  };
-});
+  <q-each person="@{page.people}" key="person.id">
+    <article title="@{person.name}">
+      <h3>${index}: @{person.name}</h3>
+
+      <q-if person-age=">= 18" person-status="'active'">
+        <p>Active adult</p>
+        <q-else-if test="@{person.vip || person.score >= page.minimum}">
+          <p>Special access</p>
+        </q-else-if>
+        <q-else><p>Waiting for access</p></q-else>
+      </q-if>
+
+      <q-if test="@{person.vip}" template="People/vip">
+        <q-else><p>Standard member</p></q-else>
+      </q-if>
+    </article>
+  </q-each>
+</q-if>
 ```
-
-`Q.Page.onLoad` and `Q.Page.onUnload` are events that occur when pages are loaded an unloaded.
-
-`Q.Page.push()`, `Q.Page.pop()` and `Q.Page.currentUrl` works with browser history. 
-
-More information: https://qbix.com/platform/guide/pages
 
 ## ⏰ Events
 
