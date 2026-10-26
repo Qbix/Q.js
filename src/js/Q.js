@@ -5241,16 +5241,48 @@ Q.Method.define = function (o, prefix, closure, options) {
 	 * @private
 	 */
 	function _makeShim(method, k, callName) {
+		var original;
 		return function _Q_Method_shim() {
 			if (_Q_Method_shim.__loaded) {
 				return _Q_Method_shim.__loaded.apply(this, arguments);
 			}
-			var url = Q.url(
-				(method.__options && method.__options.customPath)
-					? method.__options.customPath
-					: (prefix + '/' + k + '.js')
-			);
+			original = original || o[k];
+			var customPath = method.__options && method.__options.customPath;
+			var url = Q.url(customPath || (prefix + '/' + k + '.js'));
 			var t = this, a = arguments;
+
+			// If the method points to a .safe file, use SafeScript loader
+			var isSafe = url.split('?')[0].split('.').pop() === 'safe';
+			if (isSafe) {
+				return new Promise(function (resolve, reject) {
+					Q.SafeScript.load(url, function (err, factory) {
+						if (err) return reject(err);
+						// The factory IS the method — wrap and install
+						var loaded = function () {
+							var scope = {};
+							// Pass arguments as scope.args
+							scope.args = Array.prototype.slice.call(arguments);
+							return factory(scope);
+						};
+						// Copy any properties from the original shim
+						for (var property in original) {
+							if (!(property in loaded)) {
+								loaded[property] = original[property];
+							}
+						}
+						o[k] = loaded;
+						original.__loaded = loaded;
+						_Q_Method_shim.__loaded = loaded;
+						// Register in _exports so Q.require(url) finds it
+						var srcWithoutQuerystring = url.split('?')[0];
+						_exports[url] = [loaded];
+						_exports[srcWithoutQuerystring] = [loaded];
+						Q.Method.onLoad.handle(o, k, loaded, closure);
+						resolve(loaded.apply(t, a));
+					});
+				});
+			}
+
 			return _resolveArgs().then(function (args) {
 				var augmented = function () { return args; };
 				return Q.Method.load(o, k, url, augmented);
@@ -5683,8 +5715,11 @@ Q.Tool.define = function (name, /* require, */ ctor, defaultOptions, stateKeys, 
 
 		var c = _qtc[n] || {};
 		if (typeof c === 'string') {
-			if (c.split('.').pop() === 'js') {
+			var ext = c.split('.').pop();
+			if (ext === 'js') {
 				c = { js: c };
+			} else if (ext === 'safe') {
+				c = { safe: c };
 			} else {
 				c = { html: c };
 			}
@@ -6750,6 +6785,26 @@ function _loadToolScript(toolElement, callback, shared, parentId, options, white
 				});
 				_processTemplateElements(div);
 			}
+			// SafeScript .safe file: the factory runs the compiled SafeScript
+			// with tool's scope (tool element, state, options via Q.Tool.SafeScript)
+			if (params.safe && !params.safe[0] && params.safe[1]
+			&& typeof _qtc[toolName] !== 'function') {
+				var safeFactory = params.safe[1];
+				_qtc[toolName] = function _Q_Tool_SafeScript_constructor() {
+					var tool = this;
+					var scope = Q.Tool.SafeScript.buildScope(tool);
+					safeFactory(scope).then(function (result) {
+						if (result && typeof result === 'object') {
+							Q.extend(tool.state, result);
+						}
+						Q.handle(tool.state.onSafeScriptReady, tool);
+					}).catch(function (err) {
+						console.warn('SafeScript tool error (' + toolName + '):', err);
+					});
+				};
+				_qtc[toolName].toolName = Q.normalize.memoized(toolName);
+				_qtc[toolName].options = {};
+			}
 			toolConstructor = _qtc[toolName];
 			if (typeof toolConstructor !== 'function') {
 				_handleMissingConstructor(true);
@@ -6784,8 +6839,11 @@ function _loadToolScript(toolElement, callback, shared, parentId, options, white
 			return;
 		}
 		if (typeof toolConstructor === 'string') {
-			if (toolConstructor.split('.').pop() === 'js') {
+			var ext = toolConstructor.split('.').pop();
+			if (ext === 'js') {
 				toolConstructor = { js: toolConstructor };
+			} else if (ext === 'safe') {
+				toolConstructor = { safe: toolConstructor };
 			} else {
 				toolConstructor = { html: toolConstructor };
 			}
@@ -6793,7 +6851,7 @@ function _loadToolScript(toolElement, callback, shared, parentId, options, white
 		if (!Q.isPlainObject(toolConstructor)) {
 			throw new Q.Error("Q.Tool.loadScript: toolConstructor cannot be " + Q.typeOf(toolConstructor));
 		}
-		var toolConstructorSrc = toolConstructor.js || toolConstructor.html;
+		var toolConstructorSrc = toolConstructor.js || toolConstructor.html || toolConstructor.safe;
 		if (!toolConstructorSrc) {
 			throw new Q.Error("Q.Tool.loadScript: missing tool constructor file");
 		}
@@ -6805,6 +6863,15 @@ function _loadToolScript(toolElement, callback, shared, parentId, options, white
 		if (toolConstructor.html) {
 			waitFor.push('html');
 			Q.request.once(toolConstructor.html, pipe.fill('html'), { extend: false, parse: false });
+		}
+		if (toolConstructor.safe) {
+			waitFor.push('safe');
+			Q.SafeScript.load(toolConstructor.safe, function (err, factory) {
+				if (err) {
+					console.warn('Q.Tool.loadScript: SafeScript compile error for ' + toolName, err);
+				}
+				pipe.fill('safe')(err, factory);
+			});
 		}
 		// start loading css and text at the same time as the js and html
 		if (toolConstructor.css) {
@@ -6879,6 +6946,92 @@ Q.Tool.onLoadedConstructor = Q.Event.factory({}, ["", function (name) {
 	return [Q.normalize.memoized(name)];
 }]);
 Q.Tool.onMissingConstructor = new Q.Event();
+
+/**
+ * Helpers for SafeScript-based tool constructors.
+ * @class Q.Tool.SafeScript
+ */
+Q.Tool.SafeScript = {
+	/**
+	 * Builds a scope object for a SafeScript tool constructor.
+	 * The scope provides the tool's element, state, and common Q helpers
+	 * as flat functions that SafeScript code can call directly.
+	 *
+	 * @method buildScope
+	 * @static
+	 * @param {Q.Tool} tool The tool instance
+	 * @return {Object} Scope object for SafeScript.run()
+	 */
+	buildScope: function (tool) {
+		var element = tool.element;
+		var scope = {
+			// DOM access
+			createElement: function (tag) { return document.createElement(tag); },
+			createText: function (text) { return document.createTextNode(text); },
+			getElementById: function (id) { return document.getElementById(id); },
+			querySelector: function (sel) { return element.querySelector(sel); },
+			querySelectorAll: function (sel) {
+				return Array.prototype.slice.call(element.querySelectorAll(sel));
+			},
+			appendChild: function (parent, child) { parent.appendChild(child); return parent; },
+			appendTo: function (child, parent) { (parent || element).appendChild(child); return child; },
+			removeChild: function (parent, child) { parent.removeChild(child); return child; },
+			setAttribute: function (el, name, val) { el.setAttribute(name, val); },
+			getAttribute: function (el, name) { return el.getAttribute(name); },
+			addClass: function (el, cls) { el.classList.add(cls); },
+			removeClass: function (el, cls) { el.classList.remove(cls); },
+			toggleClass: function (el, cls) { el.classList.toggle(cls); },
+			hasClass: function (el, cls) { return el.classList.contains(cls); },
+			setStyle: function (el, prop, val) { el.style[prop] = val; },
+			getStyle: function (el, prop) { return getComputedStyle(el)[prop]; },
+			setText: function (el, text) { el.textContent = text; },
+			getText: function (el) { return el.textContent; },
+			setHTML: function (el, html) { el.innerHTML = html; },
+			getHTML: function (el) { return el.innerHTML; },
+
+			// Tool element
+			element: element,
+
+			// Tool state and options
+			state: tool.state || {},
+			options: tool.state || {},
+
+			// Events
+			on: function (el, event, handler) {
+				el.addEventListener(event, handler);
+			},
+			off: function (el, event, handler) {
+				el.removeEventListener(event, handler);
+			},
+
+			// Q utilities
+			url: function (u) { return Q.url(u); },
+			log: function () { console.log.apply(console, arguments); },
+			warn: function () { console.warn.apply(console, arguments); },
+
+			// Q.Request
+			request: function (url, callback, options) {
+				return Q.request(url, callback, options);
+			},
+
+			// Tool methods
+			setUpElement: function (el, tag, attrs) {
+				return Q.Tool.setUpElement(el, tag, attrs);
+			},
+
+			// Return values
+			Math: Math,
+			JSON: JSON,
+			parseInt: parseInt,
+			parseFloat: parseFloat,
+			isNaN: isNaN,
+			isFinite: isFinite,
+			encodeURIComponent: encodeURIComponent,
+			decodeURIComponent: decodeURIComponent
+		};
+		return scope;
+	}
+};
 
 /**
  * Methods for working with links
@@ -13193,8 +13346,35 @@ Q.Tool.define.components = false;
  * @class Q.Sandbox
  */
 Q.Sandbox = Q.Method.define({
-	run: new Q.Method()
+	run: new Q.Method(),
+	runSafe: new Q.Method()
 }, "{{Q}}/js/methods/Q/Sandbox", function () { return [Q]; });
+
+/**
+ * SafeScript compiler and runner — wraps the SafeScript library
+ * for use in the browser via Q.Method lazy-loading.
+ * @class Q.SafeScript
+ */
+Q.SafeScript = Q.Method.define({
+	compile: new Q.Method(),
+	run: new Q.Method(),
+	load: new Q.Method(),
+	ensureLoaded: new Q.Method()
+}, "{{Q}}/js/methods/Q/SafeScript", function () { return [Q]; });
+
+/**
+ * Transparent cross-context proxying — creates proxy scope objects
+ * that forward calls via postMessage, enabling SafeScript code to run
+ * in a WebWorker or iframe while scope functions execute on the main thread.
+ * Supports MessagePort, Worker, and Window (iframe) targets.
+ * For iframes, pass options.targetOrigin to use window.postMessage(data, origin)
+ * and filter incoming messages by event.source and event.origin.
+ * @class Q.Proxy
+ */
+Q.Proxy = Q.Method.define({
+	create: new Q.Method(),
+	handle: new Q.Method()
+}, "{{Q}}/js/methods/Q/Proxy", function () { return [Q]; });
 
 /**
  * Methods for working with data
