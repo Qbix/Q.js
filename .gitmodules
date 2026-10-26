@@ -1,0 +1,3 @@
+[submodule "dist/safescript"]
+	path = dist/safescript
+	url = https://github.com/SafeScript/safescript
